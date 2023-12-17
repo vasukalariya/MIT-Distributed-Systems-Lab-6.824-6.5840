@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"sort"
 	"strconv"
+	"strings"
+	"time"
 )
 import "log"
 import "net/rpc"
@@ -17,6 +20,13 @@ type KeyValue struct {
 	Key   string
 	Value string
 }
+
+type ByKey []KeyValue
+
+// for sorting by key.
+func (a ByKey) Len() int           { return len(a) }
+func (a ByKey) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a ByKey) Less(i, j int) bool { return a[i].Key < a[j].Key }
 
 // use ihash(key) % NReduce to choose the reduce
 // task number for each KeyValue emitted by Map.
@@ -34,21 +44,98 @@ func Worker(mapf func(string, string) []KeyValue,
 
 	// uncomment to send the Example RPC to the coordinator.
 	//CallExample()
-	task, filename, nReduce := retrieveTask()
+	cnt := 0
+	for {
+		task, filename, nReduce := retrieveTask()
 
-	if task == "map" {
-		nTask := ihash(filename) % nReduce
+		if task == "map" {
+			nTask := ihash(filename) % nReduce
 
-		intermediate, err := doMap(mapf, filename)
-		if err == nil {
-			return
+			intermediate, err := doMap(mapf, filename)
+			if err == nil {
+				return
+			}
+			saveMapResults(intermediate, nReduce, nTask)
+		} else if task == "reduce" {
+			index, err := strconv.Atoi(filename)
+			if err != nil {
+				return
+			}
+			files := getFiles(index)
+			kvData := []KeyValue{}
+			for _, filepath := range files {
+				file, err := os.Open(filepath)
+				if err != nil {
+					log.Fatalf("Error while reading file in reduce")
+				}
+				dec := json.NewDecoder(file)
+				var kv KeyValue
+				if err := dec.Decode(&kv); err != nil {
+					break
+				}
+				kvData = append(kvData, kv)
+			}
+			sort.Sort(ByKey(kvData))
+			doReduce(reducef, kvData, filename[:1])
+
+		} else {
+			cnt = cnt + 1
+			if cnt >= 10 {
+				break
+			} else {
+				time.Sleep(time.Millisecond * 10)
+			}
 		}
-		saveMapResults(intermediate, nReduce, nTask)
-	} else if task == "reduce" {
-
-	} else {
-		log.Fatalf("Invalid task passed")
 	}
+
+}
+
+func getFiles(fileIndex int) []string {
+	suffix := strconv.Itoa(fileIndex) + ".json"
+	dir, err := os.Getwd()
+	if err != nil {
+		log.Fatalf("Error while fetching directory")
+		return nil
+	}
+
+	files, err2 := os.ReadDir(dir)
+	if err2 != nil {
+		log.Fatalf("Error while reading directory")
+		return nil
+	}
+	fileSet := []string{}
+	for _, file := range files {
+		if !file.IsDir() && strings.HasSuffix(file.Name(), suffix) {
+			fileSet = append(fileSet, file.Name())
+		}
+	}
+
+	return fileSet
+}
+
+func doReduce(reducef func(string, []string) string, intermediate []KeyValue, index string) []string {
+
+	oname := "mr-out-" + index + ".txt"
+	ofile, _ := os.Create(oname)
+
+	i := 0
+	for i < len(intermediate) {
+		j := i + 1
+		for j < len(intermediate) && intermediate[j].Key == intermediate[i].Key {
+			j++
+		}
+		values := []string{}
+		for k := i; k < j; k++ {
+			values = append(values, intermediate[k].Value)
+		}
+		output := reducef(intermediate[i].Key, values)
+
+		fmt.Fprintf(ofile, "%v %v\n", intermediate[i].Key, output)
+
+		i = j
+	}
+
+	ofile.Close()
 
 }
 

@@ -7,13 +7,15 @@ import (
 	"net/http"
 	"net/rpc"
 	"os"
+	"strconv"
 	"sync"
 )
 
 type Coordinator struct {
 	// Your definitions here.
 	mu      sync.Mutex
-	files   map[string]bool
+	mfiles  map[string]bool
+	rfiles  map[int]bool
 	nReduce int
 }
 
@@ -30,16 +32,26 @@ func (c *Coordinator) Example(args *ExampleArgs, reply *ExampleReply) error {
 func (c *Coordinator) provideTask(reply *WorkerTaskReply) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	for file, processed := range c.files {
+	for file, processed := range c.mfiles {
 		if processed == false {
-			c.files[file] = true
+			c.mfiles[file] = true
 			reply.file = file
 			reply.nreduce = c.nReduce
 			reply.task = "map"
-
 			return nil
 		}
 	}
+
+	for i := 0; i < c.nReduce; i++ {
+		if c.rfiles[i] == false {
+			c.rfiles[i] = true
+			reply.file = strconv.Itoa(i)
+			reply.nreduce = c.nReduce
+			reply.task = "reduce"
+			return nil
+		}
+	}
+
 	return errors.New("No tasks available")
 }
 
@@ -74,12 +86,14 @@ func (c *Coordinator) Done() bool {
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c := Coordinator{
 		nReduce: nReduce,
+		mfiles:  make(map[string]bool),
+		rfiles:  make(map[int]bool),
 	}
 
 	// Your code here.
 	c.mu.Lock()
 	for _, file := range files {
-		c.files[file] = false
+		c.mfiles[file] = false
 	}
 	c.mu.Unlock()
 
