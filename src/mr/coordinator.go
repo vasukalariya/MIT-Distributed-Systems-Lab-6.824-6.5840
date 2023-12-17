@@ -2,6 +2,7 @@ package mr
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -17,6 +18,8 @@ type Coordinator struct {
 	mfiles  map[string]bool
 	rfiles  map[int]bool
 	nReduce int
+	done    bool
+	wg      sync.WaitGroup
 }
 
 // Your code here -- RPC handlers for the worker to call.
@@ -29,30 +32,44 @@ func (c *Coordinator) Example(args *ExampleArgs, reply *ExampleReply) error {
 	return nil
 }
 
-func (c *Coordinator) provideTask(reply *WorkerTaskReply) error {
+func (c *Coordinator) ProvideTask(args *ExampleArgs, reply *WorkerTaskReply) error {
+	fmt.Println("provideTask Called")
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for file, processed := range c.mfiles {
 		if processed == false {
+			c.wg.Add(1)
 			c.mfiles[file] = true
-			reply.file = file
-			reply.nreduce = c.nReduce
-			reply.task = "map"
+			reply.File = file
+			reply.Nreduce = c.nReduce
+			reply.Task = "map"
+			fmt.Println("Returning map task")
 			return nil
 		}
 	}
+
+	c.wg.Wait()
 
 	for i := 0; i < c.nReduce; i++ {
 		if c.rfiles[i] == false {
+			c.wg.Add(1)
 			c.rfiles[i] = true
-			reply.file = strconv.Itoa(i)
-			reply.nreduce = c.nReduce
-			reply.task = "reduce"
+			reply.File = strconv.Itoa(i)
+			reply.Nreduce = c.nReduce
+			reply.Task = "reduce"
 			return nil
 		}
 	}
 
+	c.wg.Wait()
+	c.done = true
 	return errors.New("No tasks available")
+}
+
+func (c *Coordinator) TaskDone(args *ExampleArgs, reply *ExampleReply) {
+	c.mu.Lock()
+	defer c.mu.Lock()
+	c.wg.Done()
 }
 
 // start a thread that listens for RPCs from worker.go
@@ -72,12 +89,10 @@ func (c *Coordinator) server() {
 // main/mrcoordinator.go calls Done() periodically to find out
 // if the entire job has finished.
 func (c *Coordinator) Done() bool {
-	ret := false
 
 	// Your code here.
-	ret = true
 
-	return ret
+	return c.done
 }
 
 // create a Coordinator.
@@ -88,6 +103,7 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 		nReduce: nReduce,
 		mfiles:  make(map[string]bool),
 		rfiles:  make(map[int]bool),
+		done:    false,
 	}
 
 	// Your code here.

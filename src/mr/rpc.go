@@ -6,7 +6,9 @@ package mr
 // remember to capitalize all names.
 //
 
-import "os"
+import (
+	"os"
+)
 import "strconv"
 
 //
@@ -24,9 +26,9 @@ type ExampleReply struct {
 
 // Add your RPC definitions here.
 type WorkerTaskReply struct {
-	task    string
-	file    string
-	nreduce int
+	Task    string
+	File    string
+	Nreduce int
 }
 
 // Cook up a unique-ish UNIX-domain socket name

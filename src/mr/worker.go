@@ -47,7 +47,7 @@ func Worker(mapf func(string, string) []KeyValue,
 	cnt := 0
 	for {
 		task, filename, nReduce := retrieveTask()
-
+		fmt.Println("Retrieved Data: " + task + filename + strconv.Itoa(nReduce))
 		if task == "map" {
 			nTask := ihash(filename) % nReduce
 
@@ -56,6 +56,7 @@ func Worker(mapf func(string, string) []KeyValue,
 				return
 			}
 			saveMapResults(intermediate, nReduce, nTask)
+			callDone()
 		} else if task == "reduce" {
 			index, err := strconv.Atoi(filename)
 			if err != nil {
@@ -77,7 +78,7 @@ func Worker(mapf func(string, string) []KeyValue,
 			}
 			sort.Sort(ByKey(kvData))
 			doReduce(reducef, kvData, filename[:1])
-
+			callDone()
 		} else {
 			cnt = cnt + 1
 			if cnt >= 10 {
@@ -219,13 +220,24 @@ func CallExample() {
 }
 
 func retrieveTask() (string, string, int) {
+	fmt.Println("retriving Task")
 	reply := WorkerTaskReply{}
+	args := ExampleArgs{}
 
-	ok := call("Coordinator.provideMapTask", nil, &reply)
+	ok := call("Coordinator.ProvideTask", &args, &reply)
+	fmt.Println("retriving Task call returned")
 	if ok {
-		return reply.task, reply.file, reply.nreduce
+		return reply.Task, reply.File, reply.Nreduce
 	}
 	return "", "", 0
+}
+
+func callDone() bool {
+	args := ExampleArgs{}
+	reply := ExampleReply{}
+	ok := call("Coordinator.TaskDone", &args, &reply)
+
+	return ok
 }
 
 // send an RPC request to the coordinator, wait for the response.
@@ -240,7 +252,9 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 	}
 	defer c.Close()
 
+	fmt.Println("calling " + rpcname)
 	err = c.Call(rpcname, args, reply)
+	fmt.Println("returned " + rpcname)
 	if err == nil {
 		return true
 	}
