@@ -113,7 +113,7 @@ func getFiles(fileIndex int) []string {
 	return fileSet
 }
 
-func doReduce(reducef func(string, []string) string, intermediate []KeyValue, index string) []string {
+func doReduce(reducef func(string, []string) string, intermediate []KeyValue, index string) {
 
 	oname := "mr-out-" + index + ".txt"
 	ofile, _ := os.Create(oname)
@@ -136,7 +136,7 @@ func doReduce(reducef func(string, []string) string, intermediate []KeyValue, in
 	}
 
 	ofile.Close()
-
+	return
 }
 
 func doMap(mapf func(string, string) []KeyValue, filename string) ([]KeyValue, error) {
