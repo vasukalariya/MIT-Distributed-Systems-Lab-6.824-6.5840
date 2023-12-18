@@ -46,7 +46,7 @@ func Worker(mapf func(string, string) []KeyValue,
 	//CallExample()
 	cnt := 0
 	for {
-		task, filename, nReduce := retrieveTask()
+		task, filename, nReduce, ok := retrieveTask()
 		//fmt.Println("Retrieved Data: " + task + filename + strconv.Itoa(nReduce))
 
 		if task == "map" {
@@ -58,7 +58,7 @@ func Worker(mapf func(string, string) []KeyValue,
 			}
 
 			saveMapResults(intermediate, nReduce, nTask)
-			callDone("map", filename)
+			ok = callDone("map", filename)
 		} else if task == "reduce" {
 			index, err := strconv.Atoi(filename)
 			if err != nil {
@@ -86,14 +86,19 @@ func Worker(mapf func(string, string) []KeyValue,
 
 			sort.Sort(ByKey(kvData))
 			doReduce(reducef, kvData, filename[:1])
-			callDone("reduce", filename)
+			ok = callDone("reduce", filename)
+		} else if task == "wait" {
+			time.Sleep(time.Millisecond * 100)
 		} else {
-			cnt = cnt + 1
+			return
+		}
+
+		if !ok {
+			cnt += 1
 			if cnt >= 10 {
 				break
-			} else {
-				time.Sleep(time.Millisecond * 100)
 			}
+			time.Sleep(time.Millisecond * 100)
 		}
 	}
 
@@ -230,16 +235,13 @@ func CallExample() {
 	}
 }
 
-func retrieveTask() (string, string, int) {
+func retrieveTask() (string, string, int, bool) {
 	reply := WorkerTaskReply{}
 	args := ExampleArgs{}
 
 	ok := call("Coordinator.ProvideTask", &args, &reply)
 
-	if ok {
-		return reply.Task, reply.File, reply.Nreduce
-	}
-	return "", "", 0
+	return reply.Task, reply.File, reply.Nreduce, ok
 }
 
 func callDone(task string, file string) bool {

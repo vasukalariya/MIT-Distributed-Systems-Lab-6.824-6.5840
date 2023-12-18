@@ -1,7 +1,6 @@
 package mr
 
 import (
-	"errors"
 	"log"
 	"net"
 	"net/http"
@@ -60,7 +59,8 @@ func (c *Coordinator) ProvideTask(args *ExampleArgs, reply *WorkerTaskReply) err
 				}
 			}
 		}
-		return errors.New("Wait for other Map workers to finish")
+		reply.Task = "wait"
+		return nil
 	}
 
 	for i := 0; i < c.nReduce; i++ {
@@ -83,10 +83,12 @@ func (c *Coordinator) ProvideTask(args *ExampleArgs, reply *WorkerTaskReply) err
 				}
 			}
 		}
-		return errors.New("No tasks available")
+		reply.Task = "wait"
+		return nil
 	}
 
-	return errors.New("Tasks completed")
+	reply.Task = "exit"
+	return nil
 }
 
 func (c *Coordinator) TaskDone(args *WorkerTaskArgs, reply *ExampleReply) error {
