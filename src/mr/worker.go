@@ -47,44 +47,52 @@ func Worker(mapf func(string, string) []KeyValue,
 	cnt := 0
 	for {
 		task, filename, nReduce := retrieveTask()
-		fmt.Println("Retrieved Data: " + task + filename + strconv.Itoa(nReduce))
+		//fmt.Println("Retrieved Data: " + task + filename + strconv.Itoa(nReduce))
+
 		if task == "map" {
-			nTask := ihash(filename) % nReduce
+			nTask := ihash(filename)
 
 			intermediate, err := doMap(mapf, filename)
-			if err == nil {
+			if err != nil {
 				return
 			}
+
 			saveMapResults(intermediate, nReduce, nTask)
-			callDone()
+			callDone("map")
 		} else if task == "reduce" {
 			index, err := strconv.Atoi(filename)
 			if err != nil {
 				return
 			}
+
 			files := getFiles(index)
 			kvData := []KeyValue{}
+
 			for _, filepath := range files {
 				file, err := os.Open(filepath)
 				if err != nil {
 					log.Fatalf("Error while reading file in reduce")
 				}
 				dec := json.NewDecoder(file)
-				var kv KeyValue
-				if err := dec.Decode(&kv); err != nil {
-					break
+				for {
+					var kv KeyValue
+					if err := dec.Decode(&kv); err != nil {
+						break
+					}
+					kvData = append(kvData, kv)
 				}
-				kvData = append(kvData, kv)
+
 			}
+
 			sort.Sort(ByKey(kvData))
 			doReduce(reducef, kvData, filename[:1])
-			callDone()
+			callDone("reduce")
 		} else {
 			cnt = cnt + 1
 			if cnt >= 10 {
 				break
 			} else {
-				time.Sleep(time.Millisecond * 10)
+				time.Sleep(time.Millisecond * 100)
 			}
 		}
 	}
@@ -110,7 +118,7 @@ func getFiles(fileIndex int) []string {
 			fileSet = append(fileSet, file.Name())
 		}
 	}
-
+	//fmt.Println("fileset: ", fileSet)
 	return fileSet
 }
 
@@ -154,15 +162,15 @@ func doMap(mapf func(string, string) []KeyValue, filename string) ([]KeyValue, e
 	}
 	file.Close()
 	kva := mapf(filename, string(content))
-	intermediate = append(intermediate, kva...)
+	//intermediate = append(intermediate, kva...)
 
-	return intermediate, nil
+	return kva, nil
 }
 
 func saveMapResults(intermediate []KeyValue, nReduce int, nTask int) bool {
 
 	fileMap := make(map[int]*os.File)
-	var err error
+	var err error = nil
 
 	for _, kv := range intermediate {
 		nBucket := ihash(kv.Key) % nReduce
@@ -170,7 +178,9 @@ func saveMapResults(intermediate []KeyValue, nReduce int, nTask int) bool {
 		if !exist {
 			fname := "mr-" + strconv.Itoa(nTask) + "-" + strconv.Itoa(nBucket) + ".json"
 			file, err = os.Create(fname)
+
 			if err != nil {
+				fmt.Println("error in create")
 				log.Fatalf("Error while creating map file for task %d bucket %d", nTask, nBucket)
 				return false
 			}
@@ -180,6 +190,7 @@ func saveMapResults(intermediate []KeyValue, nReduce int, nTask int) bool {
 		enc := json.NewEncoder(file)
 		err = enc.Encode(&kv)
 		if err != nil {
+			fmt.Println("error in encode")
 			fmt.Println("Error encoding JSON:", err)
 			return false
 		}
@@ -220,22 +231,25 @@ func CallExample() {
 }
 
 func retrieveTask() (string, string, int) {
-	fmt.Println("retriving Task")
 	reply := WorkerTaskReply{}
 	args := ExampleArgs{}
 
 	ok := call("Coordinator.ProvideTask", &args, &reply)
-	fmt.Println("retriving Task call returned")
+
 	if ok {
 		return reply.Task, reply.File, reply.Nreduce
 	}
 	return "", "", 0
 }
 
-func callDone() bool {
+func callDone(task string) bool {
 	args := ExampleArgs{}
 	reply := ExampleReply{}
-	ok := call("Coordinator.TaskDone", &args, &reply)
+	rpcname := "Coordinator.MapTaskDone"
+	if task == "reduce" {
+		rpcname = "Coordinator.ReduceTaskDone"
+	}
+	ok := call(rpcname, &args, &reply)
 
 	return ok
 }
@@ -252,13 +266,11 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 	}
 	defer c.Close()
 
-	fmt.Println("calling " + rpcname)
 	err = c.Call(rpcname, args, reply)
-	fmt.Println("returned " + rpcname)
+
 	if err == nil {
 		return true
 	}
 
-	fmt.Println(err)
 	return false
 }

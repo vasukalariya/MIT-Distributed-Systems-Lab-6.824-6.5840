@@ -2,7 +2,6 @@ package mr
 
 import (
 	"errors"
-	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -14,12 +13,13 @@ import (
 
 type Coordinator struct {
 	// Your definitions here.
-	mu      sync.Mutex
-	mfiles  map[string]bool
-	rfiles  map[int]bool
-	nReduce int
-	done    bool
-	wg      sync.WaitGroup
+	mu         sync.Mutex
+	mfiles     map[string]bool
+	rfiles     map[int]bool
+	mapTask    int
+	reduceTask int
+	nReduce    int
+	done       bool
 }
 
 // Your code here -- RPC handlers for the worker to call.
@@ -33,26 +33,24 @@ func (c *Coordinator) Example(args *ExampleArgs, reply *ExampleReply) error {
 }
 
 func (c *Coordinator) ProvideTask(args *ExampleArgs, reply *WorkerTaskReply) error {
-	fmt.Println("provideTask Called")
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for file, processed := range c.mfiles {
 		if processed == false {
-			c.wg.Add(1)
 			c.mfiles[file] = true
 			reply.File = file
 			reply.Nreduce = c.nReduce
 			reply.Task = "map"
-			fmt.Println("Returning map task")
 			return nil
 		}
 	}
 
-	c.wg.Wait()
+	if c.mapTask > 0 {
+		return errors.New("Wait for other Map workers to finish")
+	}
 
 	for i := 0; i < c.nReduce; i++ {
 		if c.rfiles[i] == false {
-			c.wg.Add(1)
 			c.rfiles[i] = true
 			reply.File = strconv.Itoa(i)
 			reply.Nreduce = c.nReduce
@@ -61,15 +59,25 @@ func (c *Coordinator) ProvideTask(args *ExampleArgs, reply *WorkerTaskReply) err
 		}
 	}
 
-	c.wg.Wait()
+	if c.reduceTask > 0 {
+		return errors.New("No tasks available")
+	}
 	c.done = true
-	return errors.New("No tasks available")
+	return errors.New("Tasks completed")
 }
 
-func (c *Coordinator) TaskDone(args *ExampleArgs, reply *ExampleReply) {
+func (c *Coordinator) MapTaskDone(args *ExampleArgs, reply *ExampleReply) error {
 	c.mu.Lock()
-	defer c.mu.Lock()
-	c.wg.Done()
+	defer c.mu.Unlock()
+	c.mapTask -= 1
+	return nil
+}
+
+func (c *Coordinator) ReduceTaskDone(args *ExampleArgs, reply *ExampleReply) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.reduceTask -= 1
+	return nil
 }
 
 // start a thread that listens for RPCs from worker.go
@@ -100,10 +108,12 @@ func (c *Coordinator) Done() bool {
 // nReduce is the number of reduce tasks to use.
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c := Coordinator{
-		nReduce: nReduce,
-		mfiles:  make(map[string]bool),
-		rfiles:  make(map[int]bool),
-		done:    false,
+		nReduce:    nReduce,
+		mfiles:     make(map[string]bool),
+		rfiles:     make(map[int]bool),
+		done:       false,
+		mapTask:    len(files),
+		reduceTask: nReduce,
 	}
 
 	// Your code here.

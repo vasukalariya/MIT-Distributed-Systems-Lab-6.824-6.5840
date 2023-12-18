@@ -84,8 +84,8 @@ sleep 1
 
 # start multiple workers.
 (maybe_quiet $TIMEOUT ../mrworker ../../mrapps/wc.so) &
-#(maybe_quiet $TIMEOUT ../mrworker ../../mrapps/wc.so) &
-#(maybe_quiet $TIMEOUT ../mrworker ../../mrapps/wc.so) &
+(maybe_quiet $TIMEOUT ../mrworker ../../mrapps/wc.so) &
+(maybe_quiet $TIMEOUT ../mrworker ../../mrapps/wc.so) &
 
 # wait for the coordinator to exit.
 wait $pid
