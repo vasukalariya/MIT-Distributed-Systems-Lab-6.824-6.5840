@@ -58,7 +58,7 @@ func Worker(mapf func(string, string) []KeyValue,
 			}
 
 			saveMapResults(intermediate, nReduce, nTask)
-			callDone("map")
+			callDone("map", filename)
 		} else if task == "reduce" {
 			index, err := strconv.Atoi(filename)
 			if err != nil {
@@ -86,7 +86,7 @@ func Worker(mapf func(string, string) []KeyValue,
 
 			sort.Sort(ByKey(kvData))
 			doReduce(reducef, kvData, filename[:1])
-			callDone("reduce")
+			callDone("reduce", filename)
 		} else {
 			cnt = cnt + 1
 			if cnt >= 10 {
@@ -242,14 +242,11 @@ func retrieveTask() (string, string, int) {
 	return "", "", 0
 }
 
-func callDone(task string) bool {
-	args := ExampleArgs{}
+func callDone(task string, file string) bool {
+	args := WorkerTaskArgs{task, file}
 	reply := ExampleReply{}
-	rpcname := "Coordinator.MapTaskDone"
-	if task == "reduce" {
-		rpcname = "Coordinator.ReduceTaskDone"
-	}
-	ok := call(rpcname, &args, &reply)
+
+	ok := call("Coordinator.TaskDone", &args, &reply)
 
 	return ok
 }

@@ -31,6 +31,11 @@ type WorkerTaskReply struct {
 	Nreduce int
 }
 
+type WorkerTaskArgs struct {
+	Task string
+	File string
+}
+
 // Cook up a unique-ish UNIX-domain socket name
 // in /var/tmp, for the coordinator.
 // Can't use the current directory since
