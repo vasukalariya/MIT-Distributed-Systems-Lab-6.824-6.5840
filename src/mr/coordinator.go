@@ -12,15 +12,17 @@ import (
 )
 
 type Task struct {
+	taskId string
 	status   string
 	lastTime time.Time
+	mu sync.Mutex
 }
 
 type Coordinator struct {
 	// Your definitions here.
 	mu         sync.Mutex
-	mfiles     map[string]Task
-	rfiles     map[int]Task
+	mfiles     map[string]*Task
+	rfiles     map[string]*Task
 	mapTask    int
 	reduceTask int
 	nReduce    int
@@ -38,72 +40,85 @@ func (c *Coordinator) Example(args *ExampleArgs, reply *ExampleReply) error {
 
 func (c *Coordinator) ProvideTask(args *ExampleArgs, reply *WorkerTaskReply) error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	for file, task := range c.mfiles {
-		if task.status == "left" {
-			c.mfiles[file] = Task{"running map", time.Now()}
-			reply.File = file
-			reply.Nreduce = c.nReduce
-			reply.Task = "map"
-			return nil
-		}
-	}
-
+	
 	if c.mapTask > 0 {
-		for file, task := range c.mfiles {
-			if task.status == "running map" {
-				cur := time.Now()
-				diff := cur.Sub(task.lastTime)
-				if diff.Seconds() > 5 {
-					c.mfiles[file] = Task{"left", time.Now()}
-				}
+
+		for file, _ := range c.mfiles {
+			if c.mfiles[file].status == "left" {
+				c.mfiles[file].status = "running map"
+				c.mfiles[file].lastTime = time.Now()
+				reply.File = file
+				reply.Nreduce = c.nReduce
+				reply.Task = "map"
+
+				c.mu.Unlock()
+				go waitForTask(c.mfiles[file])
+
+				return nil
 			}
-		}
+		}	
+
 		reply.Task = "wait"
+		c.mu.Unlock()
 		return nil
 	}
 
-	for i := 0; i < c.nReduce; i++ {
-		if c.rfiles[i].status == "left" {
-			c.rfiles[i] = Task{"running reduce", time.Now()}
-			reply.File = strconv.Itoa(i)
-			reply.Nreduce = c.nReduce
-			reply.Task = "reduce"
-			return nil
-		}
-	}
-
 	if c.reduceTask > 0 {
+
 		for i := 0; i < c.nReduce; i++ {
-			if c.rfiles[i].status == "running map" {
-				cur := time.Now()
-				diff := cur.Sub(c.rfiles[i].lastTime)
-				if diff.Seconds() > 5 {
-					c.rfiles[i] = Task{"left", time.Now()}
-				}
+			idx := strconv.Itoa(i)
+			if c.rfiles[idx].status == "left" {
+				c.rfiles[idx].status = "running reduce"
+				c.rfiles[idx].lastTime = time.Now()
+				reply.File = idx
+				reply.Nreduce = c.nReduce
+				reply.Task = "reduce"
+				
+				c.mu.Unlock()
+				go waitForTask(c.rfiles[idx])
+
+				return nil
 			}
 		}
+
 		reply.Task = "wait"
+		c.mu.Unlock()
 		return nil
 	}
 
 	reply.Task = "exit"
+	c.mu.Unlock()
 	return nil
 }
 
-func (c *Coordinator) TaskDone(args *WorkerTaskArgs, reply *ExampleReply) error {
+func waitForTask(task *Task) {
+	time.Sleep(time.Second*10)
+	task.mu.Lock()
+	defer task.mu.Unlock()
+	if task.status != "completed" {
+		task.status = "left"
+		task.lastTime = time.Now()
+	}
+}
+
+func (c *Coordinator) TaskDone(args *WorkerTaskArgs, reply *WorkerDoneReply) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	
 	if args.Task == "map" {
-		c.mfiles[args.File] = Task{"completed", time.Now()}
+		c.mfiles[args.File].status = "completed"
+		c.mfiles[args.File].lastTime = time.Now()
 		c.mapTask -= 1
 	} else {
-		filenum, _ := strconv.Atoi(args.File)
-		c.rfiles[filenum] = Task{"completed", time.Now()}
+		c.rfiles[args.File].status = "completed"
+		c.rfiles[args.File].lastTime = time.Now()
 		c.reduceTask -= 1
 	}
+	
+	reply.Exit = (c.mapTask == 0 && c.reduceTask == 0)
 	return nil
 }
+
 
 // start a thread that listens for RPCs from worker.go
 func (c *Coordinator) server() {
@@ -119,6 +134,7 @@ func (c *Coordinator) server() {
 	go http.Serve(l, nil)
 }
 
+
 // main/mrcoordinator.go calls Done() periodically to find out
 // if the entire job has finished.
 func (c *Coordinator) Done() bool {
@@ -126,7 +142,8 @@ func (c *Coordinator) Done() bool {
 	// Your code here.
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.reduceTask == 0
+	
+	return c.mapTask == 0 && c.reduceTask == 0
 }
 
 // create a Coordinator.
@@ -135,8 +152,8 @@ func (c *Coordinator) Done() bool {
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c := Coordinator{
 		nReduce:    nReduce,
-		mfiles:     make(map[string]Task),
-		rfiles:     make(map[int]Task),
+		mfiles:     make(map[string]*Task),
+		rfiles:     make(map[string]*Task),
 		mapTask:    len(files),
 		reduceTask: nReduce,
 	}
@@ -144,10 +161,11 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	// Your code here.
 	c.mu.Lock()
 	for _, file := range files {
-		c.mfiles[file] = Task{"left", time.Now()}
+		c.mfiles[file] = &Task{file, "left", time.Now(), sync.Mutex{}}
 	}
 	for i := 0; i < nReduce; i++ {
-		c.rfiles[i] = Task{"left", time.Now()}
+		idx := strconv.Itoa(i)
+		c.rfiles[idx] = &Task{idx, "left", time.Now(), sync.Mutex{}}
 	}
 	c.mu.Unlock()
 

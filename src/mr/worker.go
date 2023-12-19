@@ -44,10 +44,15 @@ func Worker(mapf func(string, string) []KeyValue,
 
 	// uncomment to send the Example RPC to the coordinator.
 	//CallExample()
-	cnt := 0
-	for {
+	exit := false
+	for exit == false {
+
 		task, filename, nReduce, ok := retrieveTask()
-		//fmt.Println("Retrieved Data: " + task + filename + strconv.Itoa(nReduce))
+		
+		if !ok {
+			fmt.Println("coordinator crashed worker exiting")
+			return
+		}
 
 		if task == "map" {
 			nTask := ihash(filename)
@@ -56,9 +61,10 @@ func Worker(mapf func(string, string) []KeyValue,
 			if err != nil {
 				return
 			}
-
+			
 			saveMapResults(intermediate, nReduce, nTask)
-			ok = callDone("map", filename)
+			ok, exit = callDone("map", filename)
+
 		} else if task == "reduce" {
 			index, err := strconv.Atoi(filename)
 			if err != nil {
@@ -68,38 +74,38 @@ func Worker(mapf func(string, string) []KeyValue,
 			files := getFiles(index)
 			kvData := []KeyValue{}
 
-			for _, filepath := range files {
-				file, err := os.Open(filepath)
-				if err != nil {
-					log.Fatalf("Error while reading file in reduce")
-				}
-				dec := json.NewDecoder(file)
-				for {
-					var kv KeyValue
-					if err := dec.Decode(&kv); err != nil {
-						break
+			if len(files) > 0 {
+				for _, filepath := range files {
+					file, err := os.Open(filepath)
+					if err != nil {
+						log.Fatalf("Error while reading file in reduce")
+						return
 					}
-					kvData = append(kvData, kv)
+					dec := json.NewDecoder(file)
+					for {
+						var kv KeyValue
+						if err := dec.Decode(&kv); err != nil {
+							break
+						}
+						kvData = append(kvData, kv)
+					}
 				}
-
+	
+				sort.Sort(ByKey(kvData))
+				doReduce(reducef, kvData, filename[:1])
 			}
-
-			sort.Sort(ByKey(kvData))
-			doReduce(reducef, kvData, filename[:1])
-			ok = callDone("reduce", filename)
-		} else if task == "wait" {
-			time.Sleep(time.Millisecond * 100)
-		} else {
-			return
+			
+			ok, exit = callDone("reduce", filename)
+		} else if task == "exit" {
+			exit = true
 		}
 
 		if !ok {
-			cnt += 1
-			if cnt >= 10 {
-				break
-			}
-			time.Sleep(time.Millisecond * 100)
+			fmt.Println("coordinator crashed worker exiting")
+			return
 		}
+
+		time.Sleep(time.Millisecond * 100)
 	}
 
 }
@@ -123,7 +129,7 @@ func getFiles(fileIndex int) []string {
 			fileSet = append(fileSet, file.Name())
 		}
 	}
-	//fmt.Println("fileset: ", fileSet)
+	
 	return fileSet
 }
 
@@ -145,7 +151,6 @@ func doReduce(reducef func(string, []string) string, intermediate []KeyValue, in
 		output := reducef(intermediate[i].Key, values)
 
 		fmt.Fprintf(ofile, "%v %v\n", intermediate[i].Key, output)
-
 		i = j
 	}
 
@@ -167,8 +172,7 @@ func doMap(mapf func(string, string) []KeyValue, filename string) ([]KeyValue, e
 	}
 	file.Close()
 	kva := mapf(filename, string(content))
-	//intermediate = append(intermediate, kva...)
-
+	
 	return kva, nil
 }
 
@@ -200,7 +204,7 @@ func saveMapResults(intermediate []KeyValue, nReduce int, nTask int) bool {
 			return false
 		}
 	}
-
+	
 	for _, f := range fileMap {
 		f.Close()
 	}
@@ -244,14 +248,15 @@ func retrieveTask() (string, string, int, bool) {
 	return reply.Task, reply.File, reply.Nreduce, ok
 }
 
-func callDone(task string, file string) bool {
+func callDone(task string, file string) (bool, bool) {
 	args := WorkerTaskArgs{task, file}
-	reply := ExampleReply{}
+	reply := WorkerDoneReply{false}
 
 	ok := call("Coordinator.TaskDone", &args, &reply)
 
-	return ok
+	return ok, reply.Exit
 }
+
 
 // send an RPC request to the coordinator, wait for the response.
 // usually returns true.
@@ -271,5 +276,6 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 		return true
 	}
 
+	fmt.Println("call failed")
 	return false
 }
