@@ -298,9 +298,17 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	index := -1
 	term := -1
-	isLeader := true
+	
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	isLeader := rf.me == rf.currentLeader
 
 	// Your code here (2B).
+
+	index = len(rf.log)
+	term = rf.currentTerm
+
 
 
 	return index, term, isLeader
