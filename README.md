@@ -1,4 +1,5 @@
-# Distributed-Systems-Lab-MIT-6.5840
+# Distributed-Systems-Lab-MIT-6.5840 Spring 2023
+
 - [x] Map Reduce
 
 Takeaways:
@@ -13,4 +14,9 @@ Takeaways:
  - Better to request votes in parallel using go routines.
  - It is important to wait for all votes to be returned or till the majority is achieved.
  - Remember to reset timeouts where necessary in append entries and request votes.
+ - Remember to add a random component to election timeout.
+ - While granting vote the receiver of RPC should update its current Term to match the leader/candidate.
 
+- [] Lab 2B RAFT: Log
+
+Takeaways:
