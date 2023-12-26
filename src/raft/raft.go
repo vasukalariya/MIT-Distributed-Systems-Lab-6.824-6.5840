@@ -19,7 +19,6 @@ package raft
 
 import (
 	//	"bytes"
-	// "fmt"
 	// "log"
 	"math/rand"
 	"sync"
@@ -83,6 +82,7 @@ type Log struct {
 	
 	Term int
 	Command interface{}
+	Index int
 }
 
 // return currentTerm and whether this server
@@ -184,9 +184,11 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	}
 
 	if rf.votedFor == -1 || rf.votedFor == args.CandidateId || rf.currentTerm < args.Term {
-		if len(rf.log) == 0 || (args.LastLogIndex >= rf.commitIndex && args.LastLogTerm == rf.log[args.LastLogIndex].Term) {
+		if len(rf.log) == 0 || 
+		(args.LastLogIndex >= rf.commitIndex && args.LastLogTerm == rf.log[args.LastLogIndex].Term) {
 			// log.Printf("vote given to cand [%d] by [%d]", args.CandidateId, rf.me)
-			reply.Term = args.Term
+			rf.currentTerm = args.Term
+			reply.Term = rf.currentTerm
 			reply.VoteGranted = true
 			rf.votedFor = args.CandidateId
 			rf.state = "follower"
@@ -215,33 +217,33 @@ type AppendEntriesReply struct {
 
 	Term int
 	Success bool
+	Index int
 
 }
 
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 	rf.mu.Lock()
 	// log.Printf("append entries sent by leader [%d] to [%d] ", args.LeaderId, rf.me)
+	defer rf.mu.Unlock()
 
-	if args.Term >= rf.currentTerm {
-		rf.currentLeader = args.LeaderId
-		rf.currentTerm = args.Term
-		rf.state = "follower"
-		rf.lastPinged = time.Now()
-		rf.votedFor = -1
-	} else {
+	if args.Term < rf.currentTerm {
 		rf.state = "candidate"
-	}
+		reply.Success = false
+		reply.Term = rf.currentTerm
+		return
+	} 
 	
-	// fmt.Println("Unlocking ae ", rf.me)
-	rf.mu.Unlock()
-	
-	// if args.term < rf.currentTerm {
-	// 	reply.term = rf.currentTerm
-	// 	reply.success = false
-	// 	return
-	// }
+	rf.currentLeader = args.LeaderId
+	rf.currentTerm = args.Term
+	rf.state = "follower"
+	rf.lastPinged = time.Now()
+	rf.votedFor = -1
 
-	// if ar
+	
+
+
+
+
 
 }
 
@@ -298,18 +300,20 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	index := -1
 	term := -1
-	
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-
-	isLeader := rf.me == rf.currentLeader
+	isLeader := false
 
 	// Your code here (2B).
 
-	index = len(rf.log)
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	if rf.state == "leader" {
+		isLeader = true
+	}
+	// log.Printf("Start called on server [%d] and leader is [%d] and state is [%s]", rf.me, rf.currentLeader, rf.state)
+
+	index = rf.commitIndex+1
 	term = rf.currentTerm
-
-
 
 	return index, term, isLeader
 }
@@ -336,15 +340,13 @@ func (rf *Raft) killed() bool {
 func (rf *Raft) ticker() {
 	
 	for rf.killed() == false {
-		// fmt.Println("Locking tick ", rf.me)
 		rf.mu.Lock()
 		// Your code here (2A)
 		// Check if a leader election should be started.
 
-		// fmt.Println("Checking Status ", rf.me)
 		if rf.state != "leader" {
-			timeDiff := time.Now().Sub(rf.lastPinged)
-			if timeDiff.Milliseconds() >= 1000 {
+			timeDiff := time.Now().Sub(rf.lastPinged).Milliseconds() + int64(rand.Intn(100))
+			if timeDiff >= 500 {
 				rf.mu.Unlock()
 				rf.AttemptElection()
 				rf.mu.Lock()
@@ -424,9 +426,9 @@ func (rf *Raft) AttemptElection() {
 			rf.sendRequestVote(server, &args, &reply)
 			
 			rf.mu.Lock()
-			defer rf.mu.Unlock()
 
 			if rf.state != "candidate" || rf.currentTerm != reply.Term {
+				rf.mu.Unlock()
 				return
 			}
 
@@ -434,11 +436,16 @@ func (rf *Raft) AttemptElection() {
 				votes++
 			}
 			if votes >= (servers/2 + 1) && rf.state == "candidate" {
-				// fmt.Println("Leader: ", rf.me)
+				// log.Printf("Elected Leader: [%d]", rf.me)
 				rf.state = "leader"
 				rf.currentLeader = rf.me
-				// sendHeartbeat(rf)
+			} 
+
+			rf.mu.Unlock()
+			if rf.state == "leader" {
+				sendHeartbeat(rf)
 			}
+			
 		}(i, rf.me, rf.currentTerm, lastIdx, lastTerm)	
 	}
 
@@ -461,8 +468,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf := &Raft{
 		currentTerm: 0,
 		votedFor: -1,
-		commitIndex: 0,
-		lastApplied: 0,
+		commitIndex: -1,
+		lastApplied: -1,
 		currentLeader: -1,
 		state: "follower",
 		lastPinged: time.Now(),
