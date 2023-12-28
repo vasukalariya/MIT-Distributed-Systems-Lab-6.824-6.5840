@@ -8,12 +8,15 @@ package raft
 // test with the original before submitting.
 //
 
-import "testing"
-import "fmt"
-import "time"
-import "math/rand"
-import "sync/atomic"
-import "sync"
+import (
+	"fmt"
+	// "log"
+	"math/rand"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+)
 
 // The tester generously allows solutions to complete elections in one second
 // (much more than the paper's range of timeouts).
@@ -129,14 +132,14 @@ func TestBasicAgree2B(t *testing.T) {
 	defer cfg.cleanup()
 
 	cfg.begin("Test (2B): basic agreement")
-
+	
 	iters := 3
 	for index := 1; index < iters+1; index++ {
 		nd, _ := cfg.nCommitted(index)
 		if nd > 0 {
 			t.Fatalf("some have committed before Start()")
 		}
-
+		
 		xindex := cfg.one(index*100, servers, false)
 		if xindex != index {
 			t.Fatalf("got index %v but expected %v", xindex, index)
@@ -192,6 +195,7 @@ func TestFollowerFailure2B(t *testing.T) {
 	// disconnect one follower from the network.
 	leader1 := cfg.checkOneLeader()
 	cfg.disconnect((leader1 + 1) % servers)
+	// log.Printf("follower [%d] is disconnected!", (leader1+1)%servers)
 
 	// the leader and remaining follower should be
 	// able to agree despite the disconnected follower.
@@ -203,9 +207,11 @@ func TestFollowerFailure2B(t *testing.T) {
 	leader2 := cfg.checkOneLeader()
 	cfg.disconnect((leader2 + 1) % servers)
 	cfg.disconnect((leader2 + 2) % servers)
+	// log.Printf("Disconnected both the followers [%d] [%d]", (leader2 + 1) % servers, (leader2 + 2) % servers)
 
 	// submit a command.
 	index, _, ok := cfg.rafts[leader2].Start(104)
+
 	if ok != true {
 		t.Fatalf("leader rejected Start()")
 	}
@@ -213,7 +219,10 @@ func TestFollowerFailure2B(t *testing.T) {
 		t.Fatalf("expected index 4, got %v", index)
 	}
 
+	// log.Printf("Initiating start")
 	time.Sleep(2 * RaftElectionTimeout)
+	// log.Printf("Woke up from timeout")
+
 
 	// check that command 104 did not commit.
 	n, _ := cfg.nCommitted(index)
