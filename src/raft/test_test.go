@@ -10,7 +10,6 @@ package raft
 
 import (
 	"fmt"
-	// "log"
 	"math/rand"
 	"sync"
 	"sync/atomic"
@@ -44,6 +43,7 @@ func TestInitialElection2A(t *testing.T) {
 	time.Sleep(2 * RaftElectionTimeout)
 	term2 := cfg.checkTerms()
 	if term1 != term2 {
+		DPrintf("TESTACTION: initial term [%d] final term [%d]", term1, term2)
 		fmt.Printf("warning: term changed even though there were no failures")
 	}
 
@@ -195,7 +195,7 @@ func TestFollowerFailure2B(t *testing.T) {
 	// disconnect one follower from the network.
 	leader1 := cfg.checkOneLeader()
 	cfg.disconnect((leader1 + 1) % servers)
-	// log.Printf("follower [%d] is disconnected!", (leader1+1)%servers)
+	DPrintf("[%d] is disconnected!", (leader1+1)%servers)
 
 	// the leader and remaining follower should be
 	// able to agree despite the disconnected follower.
@@ -207,7 +207,7 @@ func TestFollowerFailure2B(t *testing.T) {
 	leader2 := cfg.checkOneLeader()
 	cfg.disconnect((leader2 + 1) % servers)
 	cfg.disconnect((leader2 + 2) % servers)
-	// log.Printf("Disconnected both the followers [%d] [%d]", (leader2 + 1) % servers, (leader2 + 2) % servers)
+	// DPrintf("Disconnected both the followers [%d] [%d]", (leader2 + 1) % servers, (leader2 + 2) % servers)
 
 	// submit a command.
 	index, _, ok := cfg.rafts[leader2].Start(104)
@@ -219,9 +219,9 @@ func TestFollowerFailure2B(t *testing.T) {
 		t.Fatalf("expected index 4, got %v", index)
 	}
 
-	// log.Printf("Initiating start")
+	// DPrintf("Initiating start")
 	time.Sleep(2 * RaftElectionTimeout)
-	// log.Printf("Woke up from timeout")
+	// DPrintf("Woke up from timeout")
 
 
 	// check that command 104 did not commit.
@@ -246,10 +246,12 @@ func TestLeaderFailure2B(t *testing.T) {
 	// disconnect the first leader.
 	leader1 := cfg.checkOneLeader()
 	cfg.disconnect(leader1)
+	DPrintf("TEST: leader disconnected")
 
 	// the remaining followers should elect
 	// a new leader.
 	cfg.one(102, servers-1, false)
+	DPrintf("TEST: agreement")
 	time.Sleep(RaftElectionTimeout)
 	cfg.one(103, servers-1, false)
 
