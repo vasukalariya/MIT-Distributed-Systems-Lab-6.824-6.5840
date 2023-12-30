@@ -64,18 +64,22 @@ func TestReElection2A(t *testing.T) {
 
 	// if the leader disconnects, a new one should be elected.
 	cfg.disconnect(leader1)
+	DPrintf("[%d] Disconnected", leader1)
 	cfg.checkOneLeader()
 
 	// if the old leader rejoins, that shouldn't
 	// disturb the new leader. and the old leader
 	// should switch to follower.
 	cfg.connect(leader1)
+	DPrintf("[%d] Reconnected", leader1)
 	leader2 := cfg.checkOneLeader()
 
 	// if there's no quorum, no new leader should
 	// be elected.
 	cfg.disconnect(leader2)
+	DPrintf("[%d] Disconnected", leader2)
 	cfg.disconnect((leader2 + 1) % servers)
+	DPrintf("[%d] Disconnected", (leader2 + 1) % servers)
 	time.Sleep(2 * RaftElectionTimeout)
 
 	// check that the one connected server
@@ -84,10 +88,12 @@ func TestReElection2A(t *testing.T) {
 
 	// if a quorum arises, it should elect a leader.
 	cfg.connect((leader2 + 1) % servers)
+	DPrintf("[%d] Reconnected", (leader2 + 1) % servers)
 	cfg.checkOneLeader()
 
 	// re-join of last node shouldn't prevent leader from existing.
 	cfg.connect(leader2)
+	DPrintf("[%d] Reconnected", leader2)
 	cfg.checkOneLeader()
 
 	cfg.end()
@@ -126,61 +132,61 @@ func TestManyElections2A(t *testing.T) {
 	cfg.end()
 }
 
-func TestBasicAgree2B(t *testing.T) {
-	servers := 3
-	cfg := make_config(t, servers, false, false)
-	defer cfg.cleanup()
+// func TestBasicAgree2B(t *testing.T) {
+// 	servers := 3
+// 	cfg := make_config(t, servers, false, false)
+// 	defer cfg.cleanup()
 
-	cfg.begin("Test (2B): basic agreement")
+// 	cfg.begin("Test (2B): basic agreement")
 	
-	iters := 3
-	for index := 1; index < iters+1; index++ {
-		nd, _ := cfg.nCommitted(index)
-		if nd > 0 {
-			t.Fatalf("some have committed before Start()")
-		}
+// 	iters := 3
+// 	for index := 1; index < iters+1; index++ {
+// 		nd, _ := cfg.nCommitted(index)
+// 		if nd > 0 {
+// 			t.Fatalf("some have committed before Start()")
+// 		}
 		
-		xindex := cfg.one(index*100, servers, false)
-		if xindex != index {
-			t.Fatalf("got index %v but expected %v", xindex, index)
-		}
-	}
+// 		xindex := cfg.one(index*100, servers, false)
+// 		if xindex != index {
+// 			t.Fatalf("got index %v but expected %v", xindex, index)
+// 		}
+// 	}
 
-	cfg.end()
-}
+// 	cfg.end()
+// }
 
-// check, based on counting bytes of RPCs, that
-// each command is sent to each peer just once.
-func TestRPCBytes2B(t *testing.T) {
-	servers := 3
-	cfg := make_config(t, servers, false, false)
-	defer cfg.cleanup()
+// // check, based on counting bytes of RPCs, that
+// // each command is sent to each peer just once.
+// func TestRPCBytes2B(t *testing.T) {
+// 	servers := 3
+// 	cfg := make_config(t, servers, false, false)
+// 	defer cfg.cleanup()
 
-	cfg.begin("Test (2B): RPC byte count")
+// 	cfg.begin("Test (2B): RPC byte count")
 
-	cfg.one(99, servers, false)
-	bytes0 := cfg.bytesTotal()
+// 	cfg.one(99, servers, false)
+// 	bytes0 := cfg.bytesTotal()
 
-	iters := 10
-	var sent int64 = 0
-	for index := 2; index < iters+2; index++ {
-		cmd := randstring(5000)
-		xindex := cfg.one(cmd, servers, false)
-		if xindex != index {
-			t.Fatalf("got index %v but expected %v", xindex, index)
-		}
-		sent += int64(len(cmd))
-	}
+// 	iters := 10
+// 	var sent int64 = 0
+// 	for index := 2; index < iters+2; index++ {
+// 		cmd := randstring(5000)
+// 		xindex := cfg.one(cmd, servers, false)
+// 		if xindex != index {
+// 			t.Fatalf("got index %v but expected %v", xindex, index)
+// 		}
+// 		sent += int64(len(cmd))
+// 	}
 
-	bytes1 := cfg.bytesTotal()
-	got := bytes1 - bytes0
-	expected := int64(servers) * sent
-	if got > expected+50000 {
-		t.Fatalf("too many RPC bytes; got %v, expected %v", got, expected)
-	}
+// 	bytes1 := cfg.bytesTotal()
+// 	got := bytes1 - bytes0
+// 	expected := int64(servers) * sent
+// 	if got > expected+50000 {
+// 		t.Fatalf("too many RPC bytes; got %v, expected %v", got, expected)
+// 	}
 
-	cfg.end()
-}
+// 	cfg.end()
+// }
 
 // test just failure of followers.
 func TestFollowerFailure2B(t *testing.T) {

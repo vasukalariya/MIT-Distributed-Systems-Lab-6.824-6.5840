@@ -437,9 +437,11 @@ func (cfg *config) checkOneLeader() int {
 			}
 		}
 
+		DPrintf("TESTACTION: leader selected")
 		lastTermWithLeader := -1
 		for term, leaders := range leaders {
 			if len(leaders) > 1 {
+				DPrintf("TESTACTION: %v",leaders)
 				cfg.t.Fatalf("term %d has %d (>1) leaders", term, len(leaders))
 			}
 			if term > lastTermWithLeader {
@@ -595,7 +597,7 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
 				cfg.t.Fatalf("one(%v) failed to reach agreement", cmd)
 			}
 		} else {
-			time.Sleep(50 * time.Millisecond)
+			time.Sleep(20 * time.Millisecond)
 		}
 	}
 	if cfg.checkFinished() == false {

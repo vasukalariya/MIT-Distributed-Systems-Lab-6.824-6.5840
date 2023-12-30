@@ -1,0 +1,13 @@
+=== RUN   TestInitialElection2A
+Test (2A): initial election ...
+  ... Passed --   3.7  3   46   12726    0
+--- PASS: TestInitialElection2A (3.65s)
+=== RUN   TestReElection2A
+Test (2A): election after network failure ...
+  ... Passed --   7.0  3  126   27400    0
+--- PASS: TestReElection2A (7.03s)
+=== RUN   TestManyElections2A
+Test (2A): multiple elections ...
+  ... Passed --   8.4  7  582  124012    0
+--- PASS: TestManyElections2A (8.43s)
+PASS
