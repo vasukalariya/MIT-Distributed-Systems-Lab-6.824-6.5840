@@ -132,61 +132,61 @@ func TestManyElections2A(t *testing.T) {
 	cfg.end()
 }
 
-// func TestBasicAgree2B(t *testing.T) {
-// 	servers := 3
-// 	cfg := make_config(t, servers, false, false)
-// 	defer cfg.cleanup()
+func TestBasicAgree2B(t *testing.T) {
+	servers := 3
+	cfg := make_config(t, servers, false, false)
+	defer cfg.cleanup()
 
-// 	cfg.begin("Test (2B): basic agreement")
+	cfg.begin("Test (2B): basic agreement")
 	
-// 	iters := 3
-// 	for index := 1; index < iters+1; index++ {
-// 		nd, _ := cfg.nCommitted(index)
-// 		if nd > 0 {
-// 			t.Fatalf("some have committed before Start()")
-// 		}
+	iters := 3
+	for index := 1; index < iters+1; index++ {
+		nd, _ := cfg.nCommitted(index)
+		if nd > 0 {
+			t.Fatalf("some have committed before Start()")
+		}
 		
-// 		xindex := cfg.one(index*100, servers, false)
-// 		if xindex != index {
-// 			t.Fatalf("got index %v but expected %v", xindex, index)
-// 		}
-// 	}
+		xindex := cfg.one(index*100, servers, false)
+		if xindex != index {
+			t.Fatalf("got index %v but expected %v", xindex, index)
+		}
+	}
 
-// 	cfg.end()
-// }
+	cfg.end()
+}
 
-// // check, based on counting bytes of RPCs, that
-// // each command is sent to each peer just once.
-// func TestRPCBytes2B(t *testing.T) {
-// 	servers := 3
-// 	cfg := make_config(t, servers, false, false)
-// 	defer cfg.cleanup()
+// check, based on counting bytes of RPCs, that
+// each command is sent to each peer just once.
+func TestRPCBytes2B(t *testing.T) {
+	servers := 3
+	cfg := make_config(t, servers, false, false)
+	defer cfg.cleanup()
 
-// 	cfg.begin("Test (2B): RPC byte count")
+	cfg.begin("Test (2B): RPC byte count")
 
-// 	cfg.one(99, servers, false)
-// 	bytes0 := cfg.bytesTotal()
+	cfg.one(99, servers, false)
+	bytes0 := cfg.bytesTotal()
 
-// 	iters := 10
-// 	var sent int64 = 0
-// 	for index := 2; index < iters+2; index++ {
-// 		cmd := randstring(5000)
-// 		xindex := cfg.one(cmd, servers, false)
-// 		if xindex != index {
-// 			t.Fatalf("got index %v but expected %v", xindex, index)
-// 		}
-// 		sent += int64(len(cmd))
-// 	}
+	iters := 10
+	var sent int64 = 0
+	for index := 2; index < iters+2; index++ {
+		cmd := randstring(5000)
+		xindex := cfg.one(cmd, servers, false)
+		if xindex != index {
+			t.Fatalf("got index %v but expected %v", xindex, index)
+		}
+		sent += int64(len(cmd))
+	}
 
-// 	bytes1 := cfg.bytesTotal()
-// 	got := bytes1 - bytes0
-// 	expected := int64(servers) * sent
-// 	if got > expected+50000 {
-// 		t.Fatalf("too many RPC bytes; got %v, expected %v", got, expected)
-// 	}
+	bytes1 := cfg.bytesTotal()
+	got := bytes1 - bytes0
+	expected := int64(servers) * sent
+	if got > expected+50000 {
+		t.Fatalf("too many RPC bytes; got %v, expected %v", got, expected)
+	}
 
-// 	cfg.end()
-// }
+	cfg.end()
+}
 
 // test just failure of followers.
 func TestFollowerFailure2B(t *testing.T) {
@@ -507,7 +507,7 @@ func TestRejoin2B(t *testing.T) {
 	cfg.end()
 }
 
-func TestBackup2B(t *testing.T) {
+func TestBackup2E(t *testing.T) {
 	servers := 5
 	cfg := make_config(t, servers, false, false)
 	defer cfg.cleanup()
@@ -518,42 +518,57 @@ func TestBackup2B(t *testing.T) {
 
 	// put leader and one follower in a partition
 	leader1 := cfg.checkOneLeader()
+	DPrintf("TESTACTION: [%d] leader checked", leader1)
 	cfg.disconnect((leader1 + 2) % servers)
 	cfg.disconnect((leader1 + 3) % servers)
 	cfg.disconnect((leader1 + 4) % servers)
+	DPrintf("TESTACTION: [%d] disconnected", (leader1+2)%servers)
+	DPrintf("TESTACTION: [%d] disconnected", (leader1+3)%servers)
+	DPrintf("TESTACTION: [%d] disconnected", (leader1+4)%servers)
 
 	// submit lots of commands that won't commit
 	for i := 0; i < 50; i++ {
 		cfg.rafts[leader1].Start(rand.Int())
 	}
+	DPrintf("TESTACTION: submitted all commands that won't commit")
+
 
 	time.Sleep(RaftElectionTimeout / 2)
 
 	cfg.disconnect((leader1 + 0) % servers)
 	cfg.disconnect((leader1 + 1) % servers)
+	DPrintf("TESTACTION: [%d] disconnected", (leader1+0)%servers)
+	DPrintf("TESTACTION: [%d] disconnected", (leader1+1)%servers)
 
 	// allow other partition to recover
 	cfg.connect((leader1 + 2) % servers)
 	cfg.connect((leader1 + 3) % servers)
 	cfg.connect((leader1 + 4) % servers)
+	DPrintf("TESTACTION: [%d] reconnected", (leader1+2)%servers)
+	DPrintf("TESTACTION: [%d] reconnected", (leader1+3)%servers)
+	DPrintf("TESTACTION: [%d] reconnected", (leader1+4)%servers)
 
 	// lots of successful commands to new group.
 	for i := 0; i < 50; i++ {
 		cfg.one(rand.Int(), 3, true)
 	}
+	DPrintf("TESTACTION: submitted all commands that will commit")
 
 	// now another partitioned leader and one follower
 	leader2 := cfg.checkOneLeader()
+	DPrintf("TESTACTION: [%d] leader checked", leader1)
 	other := (leader1 + 2) % servers
 	if leader2 == other {
 		other = (leader2 + 1) % servers
 	}
 	cfg.disconnect(other)
+	DPrintf("TESTACTION: [%d] disconnected", other)
 
 	// lots more commands that won't commit
 	for i := 0; i < 50; i++ {
 		cfg.rafts[leader2].Start(rand.Int())
 	}
+	DPrintf("TESTACTION: submitted all commands that won't commit 2")
 
 	time.Sleep(RaftElectionTimeout / 2)
 
@@ -561,19 +576,25 @@ func TestBackup2B(t *testing.T) {
 	for i := 0; i < servers; i++ {
 		cfg.disconnect(i)
 	}
+	DPrintf("TESTACTION: All servers disconnected")
 	cfg.connect((leader1 + 0) % servers)
 	cfg.connect((leader1 + 1) % servers)
 	cfg.connect(other)
+	DPrintf("TESTACTION: [%d] reconnected", (leader1+0)%servers)
+	DPrintf("TESTACTION: [%d] reconnected", (leader1+1)%servers)
+	DPrintf("TESTACTION: [%d] reconnected", other)
 
 	// lots of successful commands to new group.
 	for i := 0; i < 50; i++ {
 		cfg.one(rand.Int(), 3, true)
 	}
+	DPrintf("TESTACTION: submitted all commands that should commit 2")
 
 	// now everyone
 	for i := 0; i < servers; i++ {
 		cfg.connect(i)
 	}
+	DPrintf("TESTACTION: All servers reconnected")
 	cfg.one(rand.Int(), servers, true)
 
 	cfg.end()

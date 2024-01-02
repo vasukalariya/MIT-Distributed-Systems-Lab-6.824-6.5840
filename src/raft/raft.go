@@ -285,7 +285,6 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 	if args.Term > rf.currentTerm {
 		DPrintf("[%d] changed from [%s] to [follower] for term [%d]", rf.me, rf.state, args.Term)
-		rf.currentLeader = args.LeaderId
 		rf.stepDownToFollower(args.Term)
 	}
 
@@ -309,6 +308,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 					continue
 				} else {
 					start = true
+					rf.log[newLog.Index] = newLog
 				}	
 			}		
 		} else {
@@ -332,6 +332,8 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 	reply.Term = rf.currentTerm
 	reply.Success = true
+
+	go rf.applyCommits()
 }
 
 
