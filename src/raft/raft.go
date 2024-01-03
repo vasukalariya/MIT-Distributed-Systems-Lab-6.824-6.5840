@@ -64,6 +64,7 @@ type Raft struct {
 	votedFor int
 	log[] LogEntry
 	voteCount int
+	voteReceived int
 
 	commitIndex int
 	lastApplied int
@@ -218,6 +219,7 @@ func (rf *Raft) stepDownToFollower(term int) {
 	rf.state = "follower"
 	rf.votedFor = -1
 	rf.voteCount = 0
+	rf.voteReceived = 0
 	rf.lastPing = time.Now()
 }
 
@@ -257,6 +259,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 			isNew = true
 		}
 		if isNew {
+			DPrintf("vote granted to cand [%d] by [%d %s]", args.CandidateId, rf.me, rf.state)
 			reply.VoteGranted = true
 			rf.votedFor = args.CandidateId
 			rf.state = "follower"
@@ -294,6 +297,8 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		// DPrintf("Logs not in sync cause lterm [%d] aterm [%d] ", rf.log[args.PrevLogIndex].Term, args.Term)
 		reply.Success = false
 		reply.Term = rf.currentTerm
+		reply.Index = rf.commitIndex+1
+
 		return
 	}
 
@@ -380,27 +385,41 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 
 	servers := len(rf.peers)
 
-	if rf.state != "candidate" || rf.currentTerm != args.Term {
+	if rf.state != "candidate" || rf.currentTerm != args.Term || reply.Term < rf.currentTerm {
 		return ok
 	}
+
+	// receive votes for the election term
+	rf.voteReceived++;
+
+	if reply.Term > rf.currentTerm {
+		rf.stepDownToFollower(reply.Term)
+		return ok
+	}
+
+	rf.lastPing = time.Now()
 
 	if reply.VoteGranted {
 		rf.voteCount++
 	}
 
-	if rf.voteCount >= (servers/2) {
-		DPrintf("Elected Leader: [%d]", rf.me)
-		rf.state = "leader"
-		rf.lastPing = time.Now()
-		rf.currentLeader = rf.me
-		rf.termIndex = len(rf.log)
+	if rf.voteReceived >= (servers/2) {
+		if rf.voteCount >= (servers/2) {
+			DPrintf("Elected Leader: [%d]", rf.me)
+			rf.state = "leader"
+			rf.lastPing = time.Now()
+			rf.currentLeader = rf.me
+			rf.termIndex = len(rf.log)
 
-		for i,_ := range rf.nextIndex {
-			rf.nextIndex[i] = len(rf.log)
-			rf.matchIndex[i] = 0
-		}
+			for i,_ := range rf.nextIndex {
+				rf.nextIndex[i] = len(rf.log)
+				rf.matchIndex[i] = 0
+			}
 
-		rf.broadcastUpdates()
+			rf.broadcastUpdates()
+		} else {
+			rf.stepDownToFollower(rf.currentTerm)
+		}	
 	}
 
 	return ok
@@ -438,7 +457,7 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 		}
 	} else {
 		// DPrintf("Recevied false reply from [%d] for term [%d]", peer, reply.Term)
-		rf.nextIndex[server]--;
+		rf.nextIndex[server] = reply.Index;
 	}
 
 
@@ -594,6 +613,7 @@ func (rf *Raft) AttemptElection() {
 	rf.state = "candidate"
 	rf.votedFor = rf.me
 	rf.voteCount = 0
+	rf.voteReceived = 0
 	rf.currentTerm++
 	rf.lastPing = time.Now()
 
@@ -631,9 +651,9 @@ func (rf *Raft) ticker() {
 		rf.mu.Lock()
 		// Your code here (2A)
 		// Check if a leader election should be started.
-
+		DPrintf("[%d] polling", rf.me)
 		if rf.state != "leader" {
-			timeDiff := time.Now().Sub(rf.lastPing).Milliseconds() + int64(rand.Intn(100))
+			timeDiff := time.Now().Sub(rf.lastPing).Milliseconds() + int64(rand.Intn(10)*20)
 			if timeDiff >= 1000 {
 				rf.AttemptElection()
 			}
@@ -644,7 +664,7 @@ func (rf *Raft) ticker() {
 		rf.mu.Unlock()
 		// pause for a random amount of time between 50 and 350
 		// milliseconds.
-		ms := 100 + (rand.Int63() % 50)
+		ms := 150 + (rand.Int63() % 10)*10
 		time.Sleep(time.Duration(ms) * time.Millisecond)
 	}
 

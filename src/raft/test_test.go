@@ -556,7 +556,7 @@ func TestBackup2E(t *testing.T) {
 
 	// now another partitioned leader and one follower
 	leader2 := cfg.checkOneLeader()
-	DPrintf("TESTACTION: [%d] leader checked", leader1)
+	DPrintf("TESTACTION: [%d] leader checked", leader2)
 	other := (leader1 + 2) % servers
 	if leader2 == other {
 		other = (leader2 + 1) % servers
