@@ -1,6 +1,6 @@
 # TASKS
 
-- [x] Receive a Request Vote Request
+### Receive a Request Vote Request
     
  - term < currentTerm
     - REJECT cause it is an old entry and return
@@ -20,7 +20,7 @@
         - REJECT cause either logs are not up to date or we have voted for someone else
 
 
-- [x] Receive an Append Entry Request
+### Receive an Append Entry Request
 
  - term < currentTerm
     - REJECT cause it is an old entry and return
@@ -48,7 +48,8 @@
  - apply the logs between lastApplied+1 and commitIndex to the stateMachine
 
 
-- [x] Request Vote Reply
+### Request Vote Reply
+
  - if state != candidate or current Term != args term (term for which peer started election)
     - return no processing left as someone else has become the leader
  - if voteGranted is true
@@ -59,8 +60,9 @@
     - send append entries
  - we can move back to follower if we won't be able to receive majority.
     
-    
-- [x] Append Entries Reply
+
+### Append Entries Reply
+
  - if state != leader || args term != current Term || reply term < current term
     - return 
     someone else must have been the leader or the reply is delayed and is of no use anymore for this term

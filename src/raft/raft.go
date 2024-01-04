@@ -406,25 +406,20 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 		rf.voteCount++
 	}
 
-	if rf.voteReceived >= (servers/2) {
-		if rf.voteCount >= (servers/2) {
-			DPrintf("Elected Leader: [%d]", rf.me)
-			rf.state = "leader"
-			rf.lastPing = time.Now()
-			rf.currentLeader = rf.me
-			rf.termIndex = len(rf.log)
+	if rf.voteCount >= (servers/2) {
+		DPrintf("Elected Leader: [%d]", rf.me)
+		rf.state = "leader"
+		rf.lastPing = time.Now()
+		rf.currentLeader = rf.me
+		rf.termIndex = len(rf.log)
 
-			for i,_ := range rf.nextIndex {
-				rf.nextIndex[i] = len(rf.log)
-				rf.matchIndex[i] = 0
-			}
+		for i,_ := range rf.nextIndex {
+			rf.nextIndex[i] = len(rf.log)
+			rf.matchIndex[i] = 0
+		}
 
-			rf.broadcastUpdates()
-		} else {
-			rf.stepDownToFollower(rf.currentTerm)
-			rf.resetTimer()
-		}	
-	}
+		rf.broadcastUpdates()
+	} 
 
 	return ok
 }
