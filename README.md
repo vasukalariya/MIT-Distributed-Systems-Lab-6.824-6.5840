@@ -17,6 +17,11 @@ Takeaways:
  - Remember to add a random component to election timeout.
  - While granting vote the receiver of RPC should update its current Term to match the leader/candidate.
 
-- [] Lab 2B RAFT: Log
+- [x] Lab 2B RAFT: Log
 
 Takeaways:
+ - I would emphasize to create a state diagram for better clarity and design.
+ - Work out the condition before you actually implement them.
+ - Once you implement and receive errors, try adding print statements in the test to observe the point of failures.
+ - Use Dprint in util.go to prevent commenting/uncommenting print statements.
+ - Run the test for atleast 500 times to prevent unseen errors, can use the go-many-test.sh. 
