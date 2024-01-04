@@ -220,6 +220,10 @@ func (rf *Raft) stepDownToFollower(term int) {
 	rf.votedFor = -1
 	rf.voteCount = 0
 	rf.voteReceived = 0
+}
+
+
+func (rf *Raft) resetTimer() {
 	rf.lastPing = time.Now()
 }
 
@@ -263,7 +267,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 			reply.VoteGranted = true
 			rf.votedFor = args.CandidateId
 			rf.state = "follower"
-			rf.lastPing = time.Now()
+			rf.resetTimer()
 		}
 	}
 	
@@ -284,7 +288,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		return
 	} 
 	
-	rf.lastPing = time.Now()
+	rf.resetTimer()
 
 	if args.Term > rf.currentTerm {
 		DPrintf("[%d] changed from [%s] to [follower] for term [%d]", rf.me, rf.state, args.Term)
@@ -392,12 +396,11 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 	// receive votes for the election term
 	rf.voteReceived++;
 
+	rf.resetTimer()
+
 	if reply.Term > rf.currentTerm {
 		rf.stepDownToFollower(reply.Term)
-		return ok
 	}
-
-	rf.lastPing = time.Now()
 
 	if reply.VoteGranted {
 		rf.voteCount++
@@ -419,6 +422,7 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 			rf.broadcastUpdates()
 		} else {
 			rf.stepDownToFollower(rf.currentTerm)
+			rf.resetTimer()
 		}	
 	}
 
@@ -447,6 +451,7 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 	if reply.Term > rf.currentTerm {
 		DPrintf("[%d] changed from [%s] to [follower] for term [%d] was prevlead", rf.me, rf.state, args.Term)
 		rf.stepDownToFollower(reply.Term)
+		rf.resetTimer()
 		return ok
 	}
 
