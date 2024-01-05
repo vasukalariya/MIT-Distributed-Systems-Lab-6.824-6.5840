@@ -52,13 +52,14 @@
 
  - if state != candidate or current Term != args term (term for which peer started election)
     - return no processing left as someone else has become the leader
+ - if reply Term > current Term
+    - step down to follower
  - if voteGranted is true
     - increement voteCount
  - if voteCount >= majority
     - become the leader
     - set the reset the next indices and match indices to len of log and 0 respectively.
     - send append entries
- - we can move back to follower if we won't be able to receive majority.
     
 
 ### Append Entries Reply

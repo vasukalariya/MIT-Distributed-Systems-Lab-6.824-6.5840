@@ -18,13 +18,13 @@ package raft
 //
 
 import (
-	//	"bytes"
+	"bytes"
 	"math/rand"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	//	"6.5840/labgob"
+	"6.5840/labgob"
 	"6.5840/labrpc"
 )
 
@@ -64,7 +64,6 @@ type Raft struct {
 	votedFor int
 	log[] LogEntry
 	voteCount int
-	voteReceived int
 
 	commitIndex int
 	lastApplied int
@@ -138,11 +137,23 @@ func (rf *Raft) persist() {
 	// e.Encode(rf.yyy)
 	// raftstate := w.Bytes()
 	// rf.persister.Save(raftstate, nil)
+
+
+	w := new(bytes.Buffer)
+	e := labgob.NewEncoder(w)
+	e.Encode(rf.log)
+	e.Encode(rf.currentTerm)
+	e.Encode(rf.votedFor)
+	raftstate := w.Bytes()
+	rf.persister.Save(raftstate, nil)
 }
 
 
 // restore previously persisted state.
 func (rf *Raft) readPersist(data []byte) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
 	if data == nil || len(data) < 1 { // bootstrap without any state?
 		return
 	}
@@ -159,6 +170,24 @@ func (rf *Raft) readPersist(data []byte) {
 	//   rf.xxx = xxx
 	//   rf.yyy = yyy
 	// }
+
+	r := bytes.NewBuffer(data)
+	d := labgob.NewDecoder(r)
+	var log []LogEntry
+	var currentTerm int
+	var votedFor int
+
+	if d.Decode(&log) != nil ||
+	   d.Decode(&currentTerm) != nil || 
+	   d.Decode(&votedFor) != nil {
+	  DPrintf("Error in readpersist!")
+	} else {
+	  rf.log = log
+	  rf.currentTerm = currentTerm
+	  rf.votedFor = votedFor
+	//   rf.lastApplied = len(rf.log)
+	//   rf.commitIndex = rf.lastApplied
+	}
 }
 
 
@@ -219,7 +248,6 @@ func (rf *Raft) stepDownToFollower(term int) {
 	rf.state = "follower"
 	rf.votedFor = -1
 	rf.voteCount = 0
-	rf.voteReceived = 0
 }
 
 
@@ -233,6 +261,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (2A, 2B).
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	defer rf.persist()
 
 	DPrintf("vote requested by cand [%d] to [%d %s]", args.CandidateId, rf.me, rf.state)	
 
@@ -280,6 +309,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	rf.mu.Lock()
 	DPrintf("[%d %s] received append entries sent by [%d]", rf.me, rf.state, args.LeaderId)
 	defer rf.mu.Unlock()
+	defer rf.persist()
 
 	if args.Term < rf.currentTerm {
 		// DPrintf("leader term is [%d] which is less than [%d]", args.Term, rf.currentTerm)
@@ -386,15 +416,13 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 	
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	defer rf.persist()
 
 	servers := len(rf.peers)
 
 	if rf.state != "candidate" || rf.currentTerm != args.Term || reply.Term < rf.currentTerm {
 		return ok
 	}
-
-	// receive votes for the election term
-	rf.voteReceived++;
 
 	rf.resetTimer()
 
@@ -437,6 +465,7 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	defer rf.persist()
 	
 	// manage reply from the append entries request
 	if rf.state != "leader" || args.Term != rf.currentTerm || reply.Term < rf.currentTerm {
@@ -515,6 +544,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	defer rf.persist()
 
 	if rf.state == "leader" {
 		isLeader = true
@@ -609,11 +639,11 @@ func (rf *Raft) applyCommits() {
 // Attempt Election and request votes
 func (rf *Raft) AttemptElection() {
 
+	defer rf.persist()
 	DPrintf("Election kicked off by [%d %s] for term [%d]", rf.me, rf.state, rf.currentTerm+1)
 	rf.state = "candidate"
 	rf.votedFor = rf.me
 	rf.voteCount = 0
-	rf.voteReceived = 0
 	rf.currentTerm++
 	rf.lastPing = time.Now()
 

@@ -25,3 +25,10 @@ Takeaways:
  - Once you implement and receive errors, try adding print statements in the test to observe the point of failures.
  - Use Dprint in util.go to prevent commenting/uncommenting print statements.
  - Run the test for atleast 500 times to prevent unseen errors, can use the go-many-test.sh. 
+
+- [x] Lab 2C RAFT: Persistence 
+
+Takeaways:
+ - If 2A and 2B are done properly, this would not take much time.
+ - Follow the papers directions for which parameters to persist.
+ - Intiutively, if we save the log, votedFor and currentTerm only, whenever we backup we would be able to join the cluster cause the states would explicitly be defined through either election, append entries or request vote RPCs.
