@@ -210,6 +210,7 @@ const SnapShotInterval = 10
 
 // periodically snapshot raft state
 func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
+	DPrintf("TESTACTION: Applier snap called on [%d] ", i)
 	cfg.mu.Lock()
 	rf := cfg.rafts[i]
 	cfg.mu.Unlock()
@@ -221,6 +222,7 @@ func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
 		err_msg := ""
 		if m.SnapshotValid {
 			cfg.mu.Lock()
+			DPrintf("TESTACTION: [%d] Calling ingest snap from applierSnap for m index [%d]", i, m.SnapshotIndex)
 			err_msg = cfg.ingestSnap(i, m.Snapshot, m.SnapshotIndex)
 			cfg.mu.Unlock()
 		} else if m.CommandValid {
@@ -251,6 +253,7 @@ func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
 					xlog = append(xlog, cfg.logs[i][j])
 				}
 				e.Encode(xlog)
+				DPrintf("TESTACTION: Calling snapshot on [%d]", rf.me)
 				rf.Snapshot(m.CommandIndex, w.Bytes())
 			}
 		} else {
@@ -263,6 +266,7 @@ func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
 			// holding locks...
 		}
 	}
+	DPrintf("TESTACTION: Applier snap exited on [%d] ", i)
 }
 
 // start or re-start a Raft.

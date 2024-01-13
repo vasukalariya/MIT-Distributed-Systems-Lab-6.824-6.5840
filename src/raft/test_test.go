@@ -1146,6 +1146,7 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 	cfg.one(rand.Int(), servers, true)
 	leader1 := cfg.checkOneLeader()
 
+	DPrintf("TESTACTION: Starting iterations")
 	for i := 0; i < iters; i++ {
 		victim := (leader1 + 1) % servers
 		sender := leader1
@@ -1156,16 +1157,20 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 
 		if disconnect {
 			cfg.disconnect(victim)
+			DPrintf("----------------TESTACTION: Disconnect victim [%d]----------------", victim)
 			cfg.one(rand.Int(), servers-1, true)
 		}
 		if crash {
 			cfg.crash1(victim)
+			DPrintf("----------------TESTACTION: Crashed victim [%d]----------------", victim)
 			cfg.one(rand.Int(), servers-1, true)
 		}
 
 		// perhaps send enough to get a snapshot
 		nn := (SnapShotInterval / 2) + (rand.Int() % SnapShotInterval)
+		DPrintf("Sending nn commands [%d]", nn)
 		for i := 0; i < nn; i++ {
+			DPrintf("Sending commands [%d]", i)
 			cfg.rafts[sender].Start(rand.Int())
 		}
 
@@ -1186,12 +1191,14 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 			// reconnect a follower, who maybe behind and
 			// needs to rceive a snapshot to catch up.
 			cfg.connect(victim)
+			DPrintf("----------------TESTACTION: Reconnected victim [%d]----------------", victim)
 			cfg.one(rand.Int(), servers, true)
 			leader1 = cfg.checkOneLeader()
 		}
 		if crash {
 			cfg.start1(victim, cfg.applierSnap)
 			cfg.connect(victim)
+			DPrintf("----------------TESTACTION: Reconnected victim [%d]----------------", victim)
 			cfg.one(rand.Int(), servers, true)
 			leader1 = cfg.checkOneLeader()
 		}
