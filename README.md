@@ -1,6 +1,9 @@
-# Distributed-Systems-Lab-MIT-6.5840 Spring 2023
+# Description
 
-- [x] Map Reduce
+This project is for MIT CS 6.5840 Spring 2023 labs. But, the same applies for MIT 6.824 labs.
+Learned the concepts through MIT CS 6.824 Spring 2020 lectures on YouTube.
+
+- [x] Lab 1: Map Reduce
 
 Takeaways:
  - Check the capitalization of struct member names and methods for visibility scopes.
@@ -32,3 +35,11 @@ Takeaways:
  - If 2A and 2B are done properly, this would not take much time.
  - Follow the papers directions for which parameters to persist.
  - Intiutively, if we save the log, votedFor and currentTerm only, whenever we backup we would be able to join the cluster cause the states would explicitly be defined through either election, append entries or request vote RPCs.
+
+
+- [x] Lab 2D RAFT: Log Compaction 
+
+Takeaways:
+ - Be careful, of sending the apply messages while holding the lock.
+ - Remember to discard entries if the last log index are same in InstallSnapshot but terms are different.
+ - A good trick is to not remove the index on which snapshot is called, it would make your implementation cleaner as we have started with an empty entry at index 0 as well as no necessary checks needed for empty log entries.
