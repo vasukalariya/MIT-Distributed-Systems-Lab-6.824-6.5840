@@ -1,12 +1,14 @@
 package kvraft
 
 import (
-	"6.5840/labgob"
-	"6.5840/labrpc"
-	"6.5840/raft"
 	"log"
 	"sync"
 	"sync/atomic"
+	"time"
+
+	"6.5840/labgob"
+	"6.5840/labrpc"
+	"6.5840/raft"
 )
 
 const Debug = true
@@ -19,14 +21,15 @@ func DPrintf(format string, a ...interface{}) (n int, err error) {
 }
 
 
-type Command struct {
+type Op struct {
 	// Your definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
 	Key string
 	Value string
-	Op string
-	Node int
+	Opr string
+	ClientId int64
+	RequestId int
 }
 
 type KVServer struct {
@@ -40,90 +43,109 @@ type KVServer struct {
 
 	// Your definitions here.
 	kvStore map[string]string
-	putAppCh chan bool
-	getCh chan string
-}
-
-func (kv *KVServer) checkLeader() bool {
-
-	_, isLeader := kv.rf.GetState()	
-
-	return isLeader
+	opCh map[int]chan Op
 }
 
 
 func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	// Your code here.
 
-	if !kv.checkLeader() {
+	command := Op{
+		Key: args.Key,
+		Value: "",
+		Opr: "Get",
+	}
+
+	DPrintf("[%d] Adding get [%s] on raft ", kv.me, args.Key)
+	index, _, isLeader := kv.rf.Start(command)
+
+	if !isLeader {
 		reply.Err = ErrWrongLeader
 		return
 	}
 
-	command := Command{
-		Key: args.Key,
-		Value: "",
-		Op: "Get",
+	ch, ok := kv.opCh[index]
+
+	if !ok {
+		kv.opCh[index] = make(chan Op)
+		ch = kv.opCh[index]
 	}
 
-	DPrintf("[%d] Adding get [%s] on raft ", kv.me, args.Key)
-	kv.rf.Start(command)
 
-	reply.Value = <- kv.getCh
-	reply.Err = OK
+	select {
+		case appliedOp := <- ch:
+				reply.Value = appliedOp.Value
+				reply.Err = OK
+				DPrintf("Get returned OK")
+		case <- time.After(time.Duration(300)*time.Millisecond):
+				reply.Err = ErrWrongLeader
+				DPrintf("[%d] Timeout Get", kv.me)
+	}
+
 }
 
 func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	// Your code here.
 
-	if !kv.checkLeader() {
-		reply.Err = ErrWrongLeader
-		return
-	}
 
-	command := Command{
+	command := Op{
 		Key: args.Key,
 		Value: args.Value,
-		Op: args.Op,
+		Opr: args.Op,
 	}
 
 
 	DPrintf("[%d] Adding (%s) [%s] [%s] on raft ", kv.me, args.Op, args.Key, args.Value)
-	kv.rf.Start(command)
+	index, _, isLeader := kv.rf.Start(command)
 
-	<- kv.putAppCh
-	reply.Err = OK
+	if !isLeader {
+		reply.Err = ErrWrongLeader
+		return
+	}
+
+	ch, ok := kv.opCh[index]
+
+	if !ok {
+		kv.opCh[index] = make(chan Op)
+		ch = kv.opCh[index]
+	}
+
+
+	select {
+		case <- ch:
+				reply.Err = OK
+				DPrintf("PutApp returned OK")
+		case <- time.After(time.Duration(300)*time.Millisecond):
+				DPrintf("[%d] Timeout PutApp", kv.me)
+				reply.Err = ErrWrongLeader
+	}
 }
 
 
 func (kv *KVServer) receiveUpdates() {
-	for {
-		response := <- kv.applyCh
+	
+	for response := range kv.applyCh {
 		if response.CommandValid {
-			kv.mu.Lock()
-			cmd := response.Command.(Command)
-			k := cmd.Key
-			v := cmd.Value
-			op := cmd.Op
-			DPrintf("[%d] Update Received {%s | %s | %s}", kv.me, k, v, op)
-			if op == "Get" {
-				val := kv.kvStore[k]
+				kv.mu.Lock()
+				idx := response.CommandIndex
+				cmd := response.Command.(Op)
+				k := cmd.Key
+				v := cmd.Value
+				op := cmd.Opr
+				DPrintf("[%d] Update Received {%s | %s | %s}", kv.me, k, v, op)
+				if op == "Get" {
+					cmd.Value = kv.kvStore[k]
+				} else if op == "Append" {
+					cmd.Value = kv.kvStore[k] + v 
+					kv.kvStore[k] = cmd.Value
+				} else if op == "Put" {
+					kv.kvStore[k] = v
+				} 
 				kv.mu.Unlock()
-				kv.getCh <- val
-				continue
-			}
-
-			if op == "Append" {
-				val := kv.kvStore[k]
-				val += v
-				kv.kvStore[k] = val
-			} else if op == "Put" {
-				kv.kvStore[k] = v
-			} 
-			kv.mu.Unlock()
-			kv.putAppCh <- true
+				kv.opCh[idx] <- cmd
 		}
 	}
+	
 }
 
 
@@ -162,7 +184,7 @@ func (kv *KVServer) killed() bool {
 func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister, maxraftstate int) *KVServer {
 	// call labgob.Register on structures you want
 	// Go's RPC library to marshall/unmarshall.
-	labgob.Register(Command{})
+	labgob.Register(Op{})
 
 	kv := new(KVServer)
 	kv.me = me
@@ -175,8 +197,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 
 	// You may need initialization code here.
 	kv.kvStore = make(map[string]string)
-	kv.putAppCh = make(chan bool)
-	kv.getCh = make(chan string)
+	kv.opCh = make(map[int]chan Op)
 
 	go kv.receiveUpdates()
 

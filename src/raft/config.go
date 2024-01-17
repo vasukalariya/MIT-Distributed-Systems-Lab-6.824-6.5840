@@ -202,6 +202,7 @@ func (cfg *config) ingestSnap(i int, snapshot []byte, index int) string {
 	for j := 0; j < len(xlog); j++ {
 		cfg.logs[i][j] = xlog[j]
 	}
+	DPrintf("-----------TESTACTION: [%d] Updated lastIncludedIndex/lastApplied from [%d] to [%d]-----------------", i, cfg.lastApplied[i], lastIncludedIndex)
 	cfg.lastApplied[i] = lastIncludedIndex
 	return ""
 }

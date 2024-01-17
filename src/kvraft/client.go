@@ -5,6 +5,8 @@ import (
 	"math/big"
 	"time"
 
+	// "time"
+
 	"6.5840/labrpc"
 )
 
@@ -12,6 +14,7 @@ import (
 type Clerk struct {
 	servers []*labrpc.ClientEnd
 	// You will have to modify this struct.
+	lastLeader int
 }
 
 func nrand() int64 {
@@ -25,6 +28,7 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 	ck := new(Clerk)
 	ck.servers = servers
 	// You'll have to add code here.
+	ck.lastLeader = 0
 	return ck
 }
 
@@ -42,7 +46,7 @@ func (ck *Clerk) Get(key string) string {
 
 	// You will have to modify this function.
 
-	i := 0
+	i := ck.lastLeader
 	for {
 
 		args := GetArgs {
@@ -52,21 +56,17 @@ func (ck *Clerk) Get(key string) string {
 		// DPrintf("[%d] Calling Get [%s]", i, key)
 		ok := ck.servers[i].Call("KVServer.Get", &args, &reply)
 
-		if !ok || reply.Err == ErrWrongLeader {
+		if !ok || reply.Err != OK {
 			i = (i+1)%len(ck.servers)
+			time.Sleep(time.Duration(100)*time.Millisecond)
 			continue
 		}
 
 		DPrintf("[%d %s] Returned Get [%s] [%s]", i, reply.Err, key, reply.Value)
-
-		if reply.Err == OK {
-			return reply.Value
-		}
-
-		break
+		ck.lastLeader = i
+		return reply.Value
 	}
 
-	return ""
 }
 
 // shared by Put and Append.
@@ -79,7 +79,7 @@ func (ck *Clerk) Get(key string) string {
 // arguments. and reply must be passed as a pointer.
 func (ck *Clerk) PutAppend(key string, value string, op string) {
 	// You will have to modify this function.
-	i := 0
+	i := ck.lastLeader
 	for {
 		args := PutAppendArgs {
 			Key: key,
@@ -96,6 +96,7 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 			continue
 		}
 
+		ck.lastLeader = i
 		DPrintf("[%d %s] Returned (%s) [%s] [%s]", i, reply.Err, op, key, value)
 
 		return

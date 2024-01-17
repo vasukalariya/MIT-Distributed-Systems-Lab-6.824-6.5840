@@ -133,6 +133,7 @@ func TestManyElections2A(t *testing.T) {
 }
 
 func TestBasicAgree2B(t *testing.T) {
+	DPrintf("Test (2B): basic agreement")
 	servers := 3
 	cfg := make_config(t, servers, false, false)
 	defer cfg.cleanup()
@@ -158,6 +159,7 @@ func TestBasicAgree2B(t *testing.T) {
 // check, based on counting bytes of RPCs, that
 // each command is sent to each peer just once.
 func TestRPCBytes2B(t *testing.T) {
+	DPrintf("Test (2B): RPC byte count")
 	servers := 3
 	cfg := make_config(t, servers, false, false)
 	defer cfg.cleanup()
@@ -190,6 +192,7 @@ func TestRPCBytes2B(t *testing.T) {
 
 // test just failure of followers.
 func TestFollowerFailure2B(t *testing.T) {
+	DPrintf("Test (2B): test progressive failure of followers")
 	servers := 3
 	cfg := make_config(t, servers, false, false)
 	defer cfg.cleanup()
@@ -241,6 +244,7 @@ func TestFollowerFailure2B(t *testing.T) {
 
 // test just failure of leaders.
 func TestLeaderFailure2B(t *testing.T) {
+	DPrintf("Test (2B): test failure of leaders")
 	servers := 3
 	cfg := make_config(t, servers, false, false)
 	defer cfg.cleanup()
@@ -284,6 +288,7 @@ func TestLeaderFailure2B(t *testing.T) {
 // test that a follower participates after
 // disconnect and re-connect.
 func TestFailAgree2B(t *testing.T) {
+	DPrintf("Test (2B): agreement after follower reconnects")
 	servers := 3
 	cfg := make_config(t, servers, false, false)
 	defer cfg.cleanup()
@@ -318,6 +323,7 @@ func TestFailAgree2B(t *testing.T) {
 }
 
 func TestFailNoAgree2B(t *testing.T) {
+	DPrintf("Test (2B): no agreement if too many followers disconnect")
 	servers := 5
 	cfg := make_config(t, servers, false, false)
 	defer cfg.cleanup()
@@ -369,6 +375,7 @@ func TestFailNoAgree2B(t *testing.T) {
 }
 
 func TestConcurrentStarts2B(t *testing.T) {
+	DPrintf("Test (2B): concurrent Start()s")
 	servers := 3
 	cfg := make_config(t, servers, false, false)
 	defer cfg.cleanup()
@@ -470,6 +477,7 @@ loop:
 }
 
 func TestRejoin2B(t *testing.T) {
+	DPrintf("Test (2B): rejoin of partitioned leader")
 	servers := 3
 	cfg := make_config(t, servers, false, false)
 	defer cfg.cleanup()
@@ -508,6 +516,7 @@ func TestRejoin2B(t *testing.T) {
 }
 
 func TestBackup2B(t *testing.T) {
+	DPrintf("Test (2B): leader backs up quickly over incorrect follower logs")
 	servers := 5
 	cfg := make_config(t, servers, false, false)
 	defer cfg.cleanup()
@@ -601,6 +610,7 @@ func TestBackup2B(t *testing.T) {
 }
 
 func TestCount2B(t *testing.T) {
+	DPrintf("Test (2B): RPC counts aren't too high")
 	servers := 3
 	cfg := make_config(t, servers, false, false)
 	defer cfg.cleanup()
@@ -1185,6 +1195,7 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 		}
 
 		if cfg.LogSize() >= MAXLOGSIZE {
+			DPrintf("----------TESTACTION: Max Log Size is [%d]------------", cfg.LogSize())
 			cfg.t.Fatalf("Log size too large")
 		}
 		if disconnect {
@@ -1207,23 +1218,28 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 }
 
 func TestSnapshotBasic2D(t *testing.T) {
+	DPrintf("Test (2D): snapshots basic")
 	snapcommon(t, "Test (2D): snapshots basic", false, true, false)
 }
 
 func TestSnapshotInstall2D(t *testing.T) {
+	DPrintf("Test (2D): install snapshots (disconnect)")
 	snapcommon(t, "Test (2D): install snapshots (disconnect)", true, true, false)
 }
 
 func TestSnapshotInstallUnreliable2D(t *testing.T) {
+	DPrintf("Test (2D): install snapshots (disconnect+unreliable)")
 	snapcommon(t, "Test (2D): install snapshots (disconnect+unreliable)",
 		true, false, false)
 }
 
 func TestSnapshotInstallCrash2D(t *testing.T) {
+	DPrintf("Test (2D): install snapshots (crash)")
 	snapcommon(t, "Test (2D): install snapshots (crash)", false, true, true)
 }
 
 func TestSnapshotInstallUnCrash2D(t *testing.T) {
+	DPrintf("Test (2D): install snapshots (unreliable+crash)")
 	snapcommon(t, "Test (2D): install snapshots (unreliable+crash)", false, false, true)
 }
 
@@ -1231,6 +1247,7 @@ func TestSnapshotInstallUnCrash2D(t *testing.T) {
 // restart using snapshot along with the
 // tail of the log?
 func TestSnapshotAllCrash2D(t *testing.T) {
+	DPrintf("Test (2D): crash and restart all servers")
 	servers := 3
 	iters := 5
 	cfg := make_config(t, servers, false, true)
@@ -1271,6 +1288,7 @@ func TestSnapshotAllCrash2D(t *testing.T) {
 // do servers correctly initialize their in-memory copy of the snapshot, making
 // sure that future writes to persistent state don't lose state?
 func TestSnapshotInit2D(t *testing.T) {
+	DPrintf("Test (2D): snapshot initialization after crash")
 	servers := 3
 	cfg := make_config(t, servers, false, true)
 	defer cfg.cleanup()
