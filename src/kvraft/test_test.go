@@ -45,8 +45,10 @@ var t0 = time.Now()
 
 // get/put/putappend that keep counts
 func Get(cfg *config, ck *Clerk, key string, log *OpLog, cli int) string {
+	// DPrintf("-----------------TESTACTION: [%d] GET CALLED [%s]------------------", ck.clientId, key)
 	start := int64(time.Since(t0))
 	v := ck.Get(key)
+	// DPrintf("-----------------TESTACTION: [%d] GET RETURNED [%s] [%s]------------------", ck.clientId, key, v)
 	end := int64(time.Since(t0))
 	cfg.op()
 	if log != nil {
@@ -63,9 +65,10 @@ func Get(cfg *config, ck *Clerk, key string, log *OpLog, cli int) string {
 }
 
 func Put(cfg *config, ck *Clerk, key string, value string, log *OpLog, cli int) {
-	DPrintf("-----------------TESTACTION: PUT CALLED [%s] [%s]------------------", key, value)
+	// DPrintf("-----------------TESTACTION: [%d] PUT CALLED [%s] [%s]------------------", ck.clientId, key, value)
 	start := int64(time.Since(t0))
 	ck.Put(key, value)
+	// DPrintf("-----------------TESTACTION: [%d] PUT COMPLETED [%s] [%s]------------------", ck.clientId, key, value)
 	end := int64(time.Since(t0))
 	cfg.op()
 	if log != nil {
@@ -80,9 +83,10 @@ func Put(cfg *config, ck *Clerk, key string, value string, log *OpLog, cli int) 
 }
 
 func Append(cfg *config, ck *Clerk, key string, value string, log *OpLog, cli int) {
-	DPrintf("-----------------TESTACTION: APPEND CALLED [%s] [%s]------------------", key, value)
+	// DPrintf("-----------------TESTACTION: [%d] APPEND CALLED [%s] [%s]------------------", ck.clientId, key, value)
 	start := int64(time.Since(t0))
 	ck.Append(key, value)
+	// DPrintf("-----------------TESTACTION: [%d] APPEND COMPLETED [%s] [%s]------------------", ck.clientId, key, value)
 	end := int64(time.Since(t0))
 	cfg.op()
 	if log != nil {
@@ -255,7 +259,6 @@ func GenericTest(t *testing.T, part string, nclients int, nservers int, unreliab
 		clnts[i] = make(chan int)
 	}
 	for i := 0; i < 3; i++ {
-		DPrintf("Iteration %v\n", i)
 		atomic.StoreInt32(&done_clients, 0)
 		atomic.StoreInt32(&done_partitioner, 0)
 		go spawn_clients_and_wait(t, cfg, nclients, func(cli int, myck *Clerk, t *testing.T) {
@@ -424,26 +427,31 @@ func GenericTestSpeed(t *testing.T, part string, maxraftstate int) {
 	cfg.end()
 }
 
-func TestBasic3A(t *testing.T) {
-	// Test: one client (3A) ...
-	GenericTest(t, "3A", 1, 5, false, false, false, -1, false)
-}
-
-func TestSpeed3A(t *testing.T) {
-	GenericTestSpeed(t, "3A", -1)
-}
-
-// func TestConcurrent3A(t *testing.T) {
-// 	// Test: many clients (3A) ...
-// 	GenericTest(t, "3A", 5, 5, false, false, false, -1, false)
+// func TestBasic3A(t *testing.T) {
+// 	DPrintf("---------------Test: one client (3A) ---------------------")
+// 	// Test: one client (3A) ...
+// 	GenericTest(t, "3A", 1, 5, false, false, false, -1, false)
 // }
 
+// func TestSpeed3A(t *testing.T) {
+// 	DPrintf("---------------Test: Speed (3A)---------------------")
+// 	GenericTestSpeed(t, "3A", -1)
+// }
+
+func TestConcurrent3A(t *testing.T) {
+	DPrintf("---------------Test: many clients (3A)---------------------")
+	// Test: many clients (3A) ...
+	GenericTest(t, "3A", 5, 5, false, false, false, -1, false)
+}
+
 // func TestUnreliable3A(t *testing.T) {
+// 	DPrintf("---------------Test: unreliable net, many clients (3A)---------------------")
 // 	// Test: unreliable net, many clients (3A) ...
 // 	GenericTest(t, "3A", 5, 5, true, false, false, -1, false)
 // }
 
 // func TestUnreliableOneKey3A(t *testing.T) {
+// 	DPrintf("---------------Test: unreliable net, many clients (3A)---------------------")
 // 	const nservers = 3
 // 	cfg := make_config(t, nservers, true, -1)
 // 	defer cfg.cleanup()

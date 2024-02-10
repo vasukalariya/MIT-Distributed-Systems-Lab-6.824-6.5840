@@ -4,6 +4,7 @@ import (
 	"log"
 	"sync"
 	"sync/atomic"
+
 	"time"
 
 	"6.5840/labgob"
@@ -20,15 +21,14 @@ func DPrintf(format string, a ...interface{}) (n int, err error) {
 	return
 }
 
-
 type Op struct {
 	// Your definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
-	Key string
-	Value string
-	Opr string
-	ClientId int64
+	Key       string
+	Value     string
+	Opr       string
+	ClientId  int64
 	RequestId int
 }
 
@@ -42,21 +42,57 @@ type KVServer struct {
 	maxraftstate int // snapshot if log grows this big
 
 	// Your definitions here.
-	kvStore map[string]string
-	opCh map[int]chan Op
+	kvStore    map[string]string
+	dupTable   map[int64]Op
+	responseCh map[int]chan string
 }
 
+func (kv *KVServer) lastOperation(client int64) int {
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	if op, ok := kv.dupTable[client]; ok {
+		return op.RequestId
+	}
+	return -1
+
+}
+
+func (kv *KVServer) fetchDupEntry(clientId int64, requestId int, key string) (bool, string) {
+	op, ok := kv.dupTable[clientId]
+	if !ok || op.RequestId < requestId{
+		return false, ""
+	}
+	return true, op.Value
+}
+
+func (kv *KVServer) checkChannel(index int) chan string{
+	_, ok := kv.responseCh[index]
+	if !ok {
+		kv.responseCh[index] = make(chan string)
+	}
+	return kv.responseCh[index]
+}
 
 func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	// Your code here.
 
-	command := Op{
-		Key: args.Key,
-		Value: "",
-		Opr: "Get",
+	if kv.lastOperation(args.ClientId) >= args.RequestId {
+		kv.mu.Lock()
+		defer kv.mu.Unlock()
+		reply.Value = kv.kvStore[args.Key]
+		reply.Err = OK
+		DPrintf("[%d] GET_DUP client [%d] requestid [%d] index []", kv.me, args.ClientId, args.RequestId)
+		return
 	}
 
-	DPrintf("[%d] Adding get [%s] on raft ", kv.me, args.Key)
+	command := Op{
+		Key:       args.Key,
+		Value:     "",
+		Opr:       "Get",
+		ClientId:  args.ClientId,
+		RequestId: args.RequestId,
+	}
+
 	index, _, isLeader := kv.rf.Start(command)
 
 	if !isLeader {
@@ -64,22 +100,19 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 		return
 	}
 
-	ch, ok := kv.opCh[index]
+	kv.mu.Lock()
+	ch := kv.checkChannel(index)
+	kv.mu.Unlock()
 
-	if !ok {
-		kv.opCh[index] = make(chan Op)
-		ch = kv.opCh[index]
-	}
-
-
+	DPrintf("[%d] GET client [%d] requestid [%d] index [%d]", kv.me, args.ClientId, args.RequestId, index)
 	select {
-		case appliedOp := <- ch:
-				reply.Value = appliedOp.Value
-				reply.Err = OK
-				DPrintf("Get returned OK")
-		case <- time.After(time.Duration(300)*time.Millisecond):
-				reply.Err = ErrWrongLeader
-				DPrintf("[%d] Timeout Get", kv.me)
+	case value := <-ch:
+		reply.Value = value
+		reply.Err = OK
+		DPrintf("[%d] GET_COMPLETED client [%d] requestid [%d] index [%d]", kv.me, args.ClientId, args.RequestId, index)
+	case <-time.After(time.Duration(300) * time.Millisecond):
+		reply.Err = ErrWrongLeader
+		DPrintf("[%d] TIMEOUT_GET client [%d] requestid [%d] index [%d]", kv.me, args.ClientId, args.RequestId, index)
 	}
 
 }
@@ -87,15 +120,22 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	// Your code here.
 
-
-	command := Op{
-		Key: args.Key,
-		Value: args.Value,
-		Opr: args.Op,
+	if kv.lastOperation(args.ClientId) >= args.RequestId {
+		kv.mu.Lock()
+		defer kv.mu.Unlock()
+		reply.Err = OK
+		DPrintf("[%d] PUT_DUP client [%d] requestid [%d] index []", kv.me, args.ClientId, args.RequestId)
+		return
 	}
 
+	command := Op{
+		Key:       args.Key,
+		Value:     args.Value,
+		Opr:       args.Op,
+		ClientId:  args.ClientId,
+		RequestId: args.RequestId,
+	}
 
-	DPrintf("[%d] Adding (%s) [%s] [%s] on raft ", kv.me, args.Op, args.Key, args.Value)
 	index, _, isLeader := kv.rf.Start(command)
 
 	if !isLeader {
@@ -103,52 +143,68 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 		return
 	}
 
-	ch, ok := kv.opCh[index]
+	kv.mu.Lock()
+	ch := kv.checkChannel(index)
+	kv.mu.Unlock()
 
-	if !ok {
-		kv.opCh[index] = make(chan Op)
-		ch = kv.opCh[index]
-	}
-
-
+	DPrintf("[%d] PUT client [%d] requestid [%d] index [%d]", kv.me, args.ClientId, args.RequestId, index)
+	
 	select {
-		case <- ch:
-				reply.Err = OK
-				DPrintf("PutApp returned OK")
-		case <- time.After(time.Duration(300)*time.Millisecond):
-				DPrintf("[%d] Timeout PutApp", kv.me)
-				reply.Err = ErrWrongLeader
+	case <-ch:
+		reply.Err = OK
+		DPrintf("[%d] PUT_COMPLETED client [%d] requestid [%d] index [%d]", kv.me, args.ClientId, args.RequestId, index)
+	case <-time.After(time.Duration(300) * time.Millisecond):
+		DPrintf("[%d] TIMEOUT_PUT client [%d] requestid [%d] index [%d]", kv.me, args.ClientId, args.RequestId, index)
+		reply.Err = ErrWrongLeader
 	}
-}
 
+}
 
 func (kv *KVServer) receiveUpdates() {
-	
+
 	for response := range kv.applyCh {
 		if response.CommandValid {
-				kv.mu.Lock()
-				idx := response.CommandIndex
-				cmd := response.Command.(Op)
-				k := cmd.Key
-				v := cmd.Value
-				op := cmd.Opr
-				DPrintf("[%d] Update Received {%s | %s | %s}", kv.me, k, v, op)
-				if op == "Get" {
+			cmd := response.Command.(Op)
+			index := response.CommandIndex
+			k := cmd.Key
+			v := cmd.Value
+			op := cmd.Opr
+			clientId := cmd.ClientId
+			requestId := cmd.RequestId
+
+			DPrintf("[%d] RESPONSE client [%d] requestid [%d] index [%d]", kv.me, clientId, requestId, index)
+			kv.mu.Lock()
+			ch := kv.checkChannel(index)
+			ok, val := kv.fetchDupEntry(clientId, requestId, k)
+
+			if op == "Get" {
+				if ok {
+					cmd.Value = val
+				} else {
 					cmd.Value = kv.kvStore[k]
-				} else if op == "Append" {
-					cmd.Value = kv.kvStore[k] + v 
-					kv.kvStore[k] = cmd.Value
-				} else if op == "Put" {
+					kv.dupTable[clientId] = cmd
+				}
+			} else if op == "Append" {
+				if !ok {
+					kv.kvStore[k] += v
+					cmd.Value = kv.kvStore[k]
+					kv.dupTable[clientId] = cmd
+				}
+			} else if op == "Put" {
+				if !ok {
 					kv.kvStore[k] = v
-				} 
-				kv.mu.Unlock()
-				kv.opCh[idx] <- cmd
+					cmd.Value = kv.kvStore[k]
+					kv.dupTable[clientId] = cmd
+				}
+			}
+
+			DPrintf("[%d] APPLIED client [%d] requestid [%d] index [%d]", kv.me, clientId, requestId, index)
+			kv.mu.Unlock()
+			ch <- cmd.Value
 		}
 	}
-	
+
 }
-
-
 
 // the tester calls Kill() when a KVServer instance won't
 // be needed again. for your convenience, we supply
@@ -197,7 +253,9 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 
 	// You may need initialization code here.
 	kv.kvStore = make(map[string]string)
-	kv.opCh = make(map[int]chan Op)
+	// kv.opCh = make(map[int]chan Op)
+	kv.responseCh = make(map[int]chan string)
+	kv.dupTable = make(map[int64]Op)
 
 	go kv.receiveUpdates()
 
