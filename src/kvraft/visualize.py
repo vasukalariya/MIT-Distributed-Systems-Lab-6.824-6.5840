@@ -53,19 +53,19 @@ def set_string_size(input_string, size):
         return input_string.ljust(size)
 
 def parse_log_line(line):
-    pattern = re.compile(r'\[(\d+)\] (\w+) client \[(\d+)\] requestid \[(\d+)\]')
-#  index \[(\d+)\]
+    pattern = re.compile(r'\[(\d+)\] (\w+) client \[(\d+)\] requestid \[(\d+)\] index \[(\d+)\]')
+  
     match = pattern.search(line)
     
     if match:
-        server_id, action, client_id, request_id = map(str, match.groups())
+        server_id, action, client_id, request_id, index = map(str, match.groups())
         # return {
         #     'server_id': server_id,
         #     'action': set_string_size(action, 10),
         #     'client_id': client_id,
         #     'request_id': request_id
         # }
-        return server_id, set_string_size(action, 10), client_id, request_id
+        return server_id, set_string_size(action, 10), set_string_size(client_id, 25), set_string_size(request_id, 5), set_string_size(index, 5)
     else:
         return None
 
@@ -100,14 +100,15 @@ def get_colors():
 
 
 
-def print_colored_log(server_id, action, client_id, request_id):
+def print_colored_log(server_id, action, client_id, request_id, index):
     console = Console()
     
-    if client_id not in color_map:
+    id = server_id
+    if id not in color_map:
         # print(color_map)
-        color_map[client_id] = get_colors()
+        color_map[id] = get_colors()
 
-    log_message = f"[{color_map[client_id]}] SERVER {server_id} {action} CLIENT {client_id} REQ_ID {request_id}[/{color_map[client_id]}]"
+    log_message = f"[{color_map[id]}] SERVER {server_id} {action} CLIENT {client_id} REQ_ID {request_id} INDX {index}[/{color_map[id]}]"
 
     console.print(log_message)
 
@@ -120,13 +121,14 @@ def main():
             parsed = parse_log_line(line.strip())
             
             if parsed:
-                server_id, action, client_id, request_id = parsed
-                # if action != set_string_size("RESPONSE", 10):
-                if cnt > 3000:
-                    print_colored_log(server_id, action, client_id, request_id)
+                server_id, action, client_id, request_id, index = parsed
+                # if action in [set_string_size(x, 10) for x in ["APPLIED", "TIMEOUT_GE", "TIMEOUT_PU"]]:
+                print_colored_log(server_id, action, client_id, request_id, index)
                 cnt += 1
                 if cnt % 1000 == 0:
                     user_input = input("Press Enter to continue...")
+            elif "Elected" in line.split(" "):
+                print(line)
 
 if __name__ == "__main__":
     main()

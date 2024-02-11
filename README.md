@@ -43,3 +43,14 @@ Takeaways:
  - Be careful, of sending the apply messages while holding the lock.
  - Remember to discard entries if the last log index are same in InstallSnapshot but terms are different.
  - A good trick is to not remove the index on which snapshot is called, it would make your implementation cleaner as we have started with an empty entry at index 0 as well as no necessary checks needed for empty log entries.
+
+
+- [x] Lab 3A: Key/Value service without snapshots 
+
+Takeaways:
+ - Remember that channels used to pass message between the operations applier and RPC handler should have buffer size of 1. If it is 0 then you could get stuck as all request would need to be ordered sequentially and one delay can timeout all the pending requests.
+ - Once you receive the operation from applier to the RPC handler after updating key value store, the operation sent and received needs to be compared because it can be possible that the current server is no longer a leader and message received on the applier is modified due to some other leader.
+ - Use the visualize.py script to analyze logs. I have created this to visualize the logs better as you can assign colors to servers or clients and separately focus on that section of the logs.
+ - Always check if the received command is applied or not. You can track it by having a lastApplied index and ignoring the messages that have already been applied or the request ids that have already been handled for that client.
+ - Be patient with the debugging and format the logs in specific order so that errors are easy to spot.
+ - Moreover, you can ignore the requests that have already been applied in the initial check of the RPC handler. Only send those operations to the RAFT if they are not applied yet.

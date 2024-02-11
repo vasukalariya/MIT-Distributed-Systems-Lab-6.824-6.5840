@@ -12,7 +12,7 @@ import (
 	"6.5840/raft"
 )
 
-const Debug = true
+const Debug = false
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug {
@@ -44,7 +44,8 @@ type KVServer struct {
 	// Your definitions here.
 	kvStore    map[string]string
 	dupTable   map[int64]Op
-	responseCh map[int]chan string
+	responseCh map[int]chan Op
+	lastApplied int
 }
 
 func (kv *KVServer) lastOperation(client int64) int {
@@ -65,12 +66,19 @@ func (kv *KVServer) fetchDupEntry(clientId int64, requestId int, key string) (bo
 	return true, op.Value
 }
 
-func (kv *KVServer) checkChannel(index int) chan string{
+func (kv *KVServer) checkChannel(index int) chan Op{
 	_, ok := kv.responseCh[index]
 	if !ok {
-		kv.responseCh[index] = make(chan string)
+		kv.responseCh[index] = make(chan Op, 1)
 	}
 	return kv.responseCh[index]
+}
+
+func (kv *KVServer) sameOps(a Op, b Op) bool {
+	return a.ClientId == b.ClientId && 
+			a.RequestId == b.RequestId && 
+			a.Key == b.Key && 
+			a.Opr == b.Opr
 }
 
 func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
@@ -93,6 +101,8 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 		RequestId: args.RequestId,
 	}
 
+	// DPrintf("[%d] INIT_GET client [%d] requestid [%d] index []", kv.me, args.ClientId, args.RequestId)
+
 	index, _, isLeader := kv.rf.Start(command)
 
 	if !isLeader {
@@ -106,11 +116,15 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 
 	DPrintf("[%d] GET client [%d] requestid [%d] index [%d]", kv.me, args.ClientId, args.RequestId, index)
 	select {
-	case value := <-ch:
-		reply.Value = value
+	case op := <-ch:
+		if !kv.sameOps(op, command) {
+			reply.Err = ErrWrongLeader
+			return
+		}
+		reply.Value = op.Value
 		reply.Err = OK
 		DPrintf("[%d] GET_COMPLETED client [%d] requestid [%d] index [%d]", kv.me, args.ClientId, args.RequestId, index)
-	case <-time.After(time.Duration(300) * time.Millisecond):
+	case <-time.After(time.Duration(500) * time.Millisecond):
 		reply.Err = ErrWrongLeader
 		DPrintf("[%d] TIMEOUT_GET client [%d] requestid [%d] index [%d]", kv.me, args.ClientId, args.RequestId, index)
 	}
@@ -136,6 +150,8 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 		RequestId: args.RequestId,
 	}
 
+	// DPrintf("[%d] INIT_PUT client [%d] requestid [%d] index []", kv.me, args.ClientId, args.RequestId)
+
 	index, _, isLeader := kv.rf.Start(command)
 
 	if !isLeader {
@@ -150,10 +166,14 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	DPrintf("[%d] PUT client [%d] requestid [%d] index [%d]", kv.me, args.ClientId, args.RequestId, index)
 	
 	select {
-	case <-ch:
+	case op := <- ch:
+		if !kv.sameOps(op, command) {
+			reply.Err = ErrWrongLeader
+			return
+		}
 		reply.Err = OK
 		DPrintf("[%d] PUT_COMPLETED client [%d] requestid [%d] index [%d]", kv.me, args.ClientId, args.RequestId, index)
-	case <-time.After(time.Duration(300) * time.Millisecond):
+	case <-time.After(time.Duration(500) * time.Millisecond):
 		DPrintf("[%d] TIMEOUT_PUT client [%d] requestid [%d] index [%d]", kv.me, args.ClientId, args.RequestId, index)
 		reply.Err = ErrWrongLeader
 	}
@@ -163,6 +183,7 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 func (kv *KVServer) receiveUpdates() {
 
 	for response := range kv.applyCh {
+		DPrintf("[%d] RECEIVED client [] requestid [] index [%d]", kv.me, response.CommandIndex)
 		if response.CommandValid {
 			cmd := response.Command.(Op)
 			index := response.CommandIndex
@@ -174,33 +195,33 @@ func (kv *KVServer) receiveUpdates() {
 
 			DPrintf("[%d] RESPONSE client [%d] requestid [%d] index [%d]", kv.me, clientId, requestId, index)
 			kv.mu.Lock()
+			if kv.lastApplied >= index {
+				kv.mu.Unlock()
+				continue
+			}
+
 			ch := kv.checkChannel(index)
 			ok, val := kv.fetchDupEntry(clientId, requestId, k)
-
-			if op == "Get" {
-				if ok {
-					cmd.Value = val
-				} else {
+			if ok {
+				cmd.Value = val
+			} else {
+				if op == "Get" {
 					cmd.Value = kv.kvStore[k]
 					kv.dupTable[clientId] = cmd
-				}
-			} else if op == "Append" {
-				if !ok {
+				} else if op == "Append" {
 					kv.kvStore[k] += v
 					cmd.Value = kv.kvStore[k]
 					kv.dupTable[clientId] = cmd
-				}
-			} else if op == "Put" {
-				if !ok {
+				} else if op == "Put" {
 					kv.kvStore[k] = v
 					cmd.Value = kv.kvStore[k]
 					kv.dupTable[clientId] = cmd
 				}
 			}
-
+			kv.lastApplied = index
 			DPrintf("[%d] APPLIED client [%d] requestid [%d] index [%d]", kv.me, clientId, requestId, index)
 			kv.mu.Unlock()
-			ch <- cmd.Value
+			ch <- cmd
 		}
 	}
 
@@ -254,8 +275,9 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	// You may need initialization code here.
 	kv.kvStore = make(map[string]string)
 	// kv.opCh = make(map[int]chan Op)
-	kv.responseCh = make(map[int]chan string)
+	kv.responseCh = make(map[int]chan Op)
 	kv.dupTable = make(map[int64]Op)
+	kv.lastApplied = 0
 
 	go kv.receiveUpdates()
 
