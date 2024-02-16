@@ -818,41 +818,15 @@ func (rf *Raft) applyCommits() {
 			rf.applyCond.Wait()
 		}
 
-
-		// if rf.lastApplied >= rf.commitIndex {
-		// 	rf.applyCond.Wait()
-		// }
-
-		// DPrintf("[%d] Applying commits when lastIncIdx [%d] log [%d - %d] lastApp [%d] commitIdx [%d]", rf.me, rf.lastIncludedIndex, rf.log[0].Index, rf.log[len(rf.log)-1].Index, rf.lastApplied, rf.commitIndex)
-		// var entriesToApply []ApplyMsg
-		// for i := rf.lastApplied+1; i <= rf.commitIndex; i++{
-		// 	msg := ApplyMsg{
-		// 		CommandValid: true,
-		// 		Command: rf.log[rf.getPhysicalIndex(i)].Command,
-		// 		CommandIndex: i,
-		// 	}
-		// 	entriesToApply = append(entriesToApply, msg)
-		// 	rf.lastApplied = i
-		// }
-
-		// DPrintf("[%d] Updated lastApplied to [%d]", rf.me, rf.lastApplied)
-		// rf.mu.Unlock()		
-
-		// for _, applyMsg := range entriesToApply {
-		// 	rf.mu.Lock()
-		// 	lastIncIndex := rf.lastIncludedIndex
-		// 	if lastIncIndex >= applyMsg.CommandIndex {
-		// 		rf.mu.Unlock()
-		// 		continue
-		// 	}
-		// 	rf.mu.Unlock()
-		// 	DPrintf("[%d] applying on channel [%d] during lastApp [%d]", rf.me, applyMsg.CommandIndex, rf.lastApplied)
-		// 	rf.applyCh <- applyMsg
-		// }
-
-
 	}
 	
+}
+
+
+func (rf *Raft) GetStateSize() int {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	return rf.persister.RaftStateSize()
 }
 
 

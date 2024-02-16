@@ -54,3 +54,14 @@ Takeaways:
  - Always check if the received command is applied or not. You can track it by having a lastApplied index and ignoring the messages that have already been applied or the request ids that have already been handled for that client.
  - Be patient with the debugging and format the logs in specific order so that errors are easy to spot.
  - Moreover, you can ignore the requests that have already been applied in the initial check of the RPC handler. Only send those operations to the RAFT if they are not applied yet.
+
+
+- [x] Lab 3B: Key/value service with snapshots 
+
+Takeaways:
+ - Be sure to check for snapshots that are recevied on the applyMsg channel.
+ - Make sure to restore the state when KVserver is restarted
+ - Do check for raft state in every update received to make sure that raft state does not increase much and you can call the snapshot as soon as minimum threshold i.e. maxraftstate is reached.
+
+
+

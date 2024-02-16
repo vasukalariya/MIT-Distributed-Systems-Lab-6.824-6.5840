@@ -4,7 +4,7 @@ import (
 	"log"
 	"sync"
 	"sync/atomic"
-
+	"bytes"
 	"time"
 
 	"6.5840/labgob"
@@ -124,7 +124,7 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 		reply.Value = op.Value
 		reply.Err = OK
 		DPrintf("[%d] GET_COMPLETED client [%d] requestid [%d] index [%d]", kv.me, args.ClientId, args.RequestId, index)
-	case <-time.After(time.Duration(500) * time.Millisecond):
+	case <-time.After(time.Duration(300) * time.Millisecond):
 		reply.Err = ErrWrongLeader
 		DPrintf("[%d] TIMEOUT_GET client [%d] requestid [%d] index [%d]", kv.me, args.ClientId, args.RequestId, index)
 	}
@@ -173,12 +173,60 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 		}
 		reply.Err = OK
 		DPrintf("[%d] PUT_COMPLETED client [%d] requestid [%d] index [%d]", kv.me, args.ClientId, args.RequestId, index)
-	case <-time.After(time.Duration(500) * time.Millisecond):
+	case <-time.After(time.Duration(300) * time.Millisecond):
 		DPrintf("[%d] TIMEOUT_PUT client [%d] requestid [%d] index [%d]", kv.me, args.ClientId, args.RequestId, index)
 		reply.Err = ErrWrongLeader
 	}
 
 }
+
+
+
+
+func (kv *KVServer) callSnapshot() {
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+
+	if kv.maxraftstate != -1 && kv.rf.GetStateSize() >= kv.maxraftstate {
+		w := new(bytes.Buffer)
+		e := labgob.NewEncoder(w)
+		e.Encode(kv.kvStore)
+		e.Encode(kv.dupTable)
+
+		if err := e.Encode(kv.kvStore); err != nil {
+			DPrintf("Error in encoding kvStore")
+		}
+		if err := e.Encode(kv.dupTable); err != nil {
+			DPrintf("Error in encoding dupTable")
+		}
+
+		kv_state := w.Bytes()
+
+		kv.rf.Snapshot(kv.lastApplied, kv_state)
+		DPrintf("[%d] SNAPSHOT client [] requestid [] index [%d]", kv.me, kv.lastApplied)
+	}
+}
+
+func (kv *KVServer) restoreState(snapshot []byte) {
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	r := bytes.NewBuffer(snapshot)
+	d := labgob.NewDecoder(r)
+
+
+	var tmpKvStore map[string]string
+	var tmpDupTable map[int64]Op
+
+	if d.Decode(&tmpKvStore) != nil ||
+		d.Decode(&tmpDupTable) != nil {
+	   DPrintf("Error in restoring state!")
+	} else {
+		kv.kvStore = tmpKvStore
+		kv.dupTable = tmpDupTable
+	}
+	
+}
+
 
 func (kv *KVServer) receiveUpdates() {
 
@@ -223,6 +271,13 @@ func (kv *KVServer) receiveUpdates() {
 			kv.mu.Unlock()
 			ch <- cmd
 		}
+		if response.SnapshotValid {
+			kv.restoreState(response.Snapshot)
+			kv.mu.Lock()
+			kv.lastApplied = response.SnapshotIndex
+			kv.mu.Unlock()
+		}
+		kv.callSnapshot()
 	}
 
 }
@@ -278,6 +333,8 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv.responseCh = make(map[int]chan Op)
 	kv.dupTable = make(map[int64]Op)
 	kv.lastApplied = 0
+
+	kv.restoreState(persister.ReadSnapshot())
 
 	go kv.receiveUpdates()
 
