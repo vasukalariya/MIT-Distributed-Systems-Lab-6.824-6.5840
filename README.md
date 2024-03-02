@@ -64,4 +64,13 @@ Takeaways:
  - Do check for raft state in every update received to make sure that raft state does not increase much and you can call the snapshot as soon as minimum threshold i.e. maxraftstate is reached.
 
 
+- [x] Lab 4A: The Shard controller
+
+Takeaways:
+ - Map iteration is not deterministic, while re-balancing you need to use some order of keys to iterate. Hint: Sorting
+ - Be sure to assign the currentConfig as the last config in the config list during start.
+ - Make sure to check for out of bounds for num parameter of Query.
+
+
+
 
