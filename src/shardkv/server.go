@@ -12,7 +12,7 @@ import (
 	"6.5840/shardctrler"
 )
 
-const Debug = true
+const Debug = false
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug {
@@ -223,7 +223,7 @@ func (kv *ShardKV) Kill() {
 func (kv *ShardKV) callSnapshot() {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-	DPrintf("[%d %d] SIZE %d", kv.gid, kv.me, kv.rf.GetStateSize())
+
 	if kv.maxraftstate != -1 && kv.rf.GetStateSize() >= kv.maxraftstate {
 		w := new(bytes.Buffer)
 		e := labgob.NewEncoder(w)
@@ -234,15 +234,19 @@ func (kv *ShardKV) callSnapshot() {
 
 		if err := e.Encode(kv.kvStore); err != nil {
 			DPrintf("[%d %d] Error in encoding kvStore", kv.gid, kv.me)
+			return
 		}
 		if err := e.Encode(kv.dupTable); err != nil {
 			DPrintf("[%d %d] Error in encoding dupTable", kv.gid, kv.me)
+			return
 		}
 		if err := e.Encode(kv.currentConfig); err != nil {
 			DPrintf("[%d %d] Error in encoding currentConfig", kv.gid, kv.me)
+			return
 		}
 		if err := e.Encode(kv.serveShards); err != nil {
 			DPrintf("[%d %d] Error in encoding serveShards", kv.gid, kv.me)
+			return
 		}
 
 		kv_state := w.Bytes()
@@ -293,26 +297,41 @@ func (kv *ShardKV) receiveUpdates() {
 	for response := range kv.applyCh {
 		// DPrintf("[%d] RECEIVED client [] requestid [] index [%d]", kv.me, response.CommandIndex)
 		if response.CommandValid {
+			index := response.CommandIndex
+			kv.mu.Lock()
+			
+			if index <= kv.lastApplied {
+				kv.mu.Unlock()
+				continue
+			}
+			kv.lastApplied = index
+			kv.mu.Unlock()
+
 			if cfg, ok := response.Command.(shardctrler.Config); ok {
+				
 				DPrintf("[%d %d] RECEIVED CONFIG %d %v", kv.gid, kv.me, cfg.Num, cfg.Shards)
 				kv.handleConfigChange(cfg)
+
 			} else if reply, ok := response.Command.(MigrateReply); ok {
+				
 				DPrintf("[%d %d] MIGRATION RECEIVED %v", kv.gid, kv.me, reply.ConfigNum)
 				kv.handleMigration(&reply)
 				DPrintf("[%d %d] MIGRATION COMPLETE %v %v", kv.gid, kv.me, reply.ConfigNum, kv.serveShards)
-				continue
+
 			} else {
+
 				cmd := response.Command.(Op)
-				index := response.CommandIndex
 				k := cmd.Key
 				v := cmd.Value
 				op := cmd.Opr
 				clientId := cmd.ClientId
 				requestId := cmd.RequestId
 				shard := key2shard(k)
+
 				// DPrintf("[%d] RESPONSE client [%d] requestid [%d] index [%d]", kv.me, clientId, requestId, index)
 				kv.mu.Lock()
-				if kv.lastApplied >= index || !kv.handleKey(k){
+				
+				if !kv.handleKey(k){
 					kv.mu.Unlock()
 					continue
 				}
@@ -343,7 +362,6 @@ func (kv *ShardKV) receiveUpdates() {
 						kv.dupTable[clientId] = requestId
 					}
 				}
-				kv.lastApplied = index
 				// DPrintf("[%d] APPLIED client [%d] requestid [%d] index [%d]", kv.me, clientId, requestId, index)
 				kv.mu.Unlock()
 				ch <- cmd
@@ -369,21 +387,29 @@ func (kv *ShardKV) pollConfigChanges() {
 	for {
 		_, isLeader := kv.rf.GetState()
 		
-		if !isLeader {
-			time.Sleep(100 * time.Millisecond)
-			continue
-		}
+		if isLeader {
+			kv.mu.Lock()
+			canPullLatestConfig := true
+			
+			for _, status := range kv.serveShards {
+				if status != "serve" {
+					canPullLatestConfig = false
+					break
+				}
+			}
 
-		kv.mu.Lock()
-		nextConfig := kv.currentConfig.Num + 1
-		newConfig := kv.mck.Query(nextConfig)
-		
-		if newConfig.Num == nextConfig {
-				DPrintf("[%d %d] CURRENT CONFIG %d %v", kv.gid, kv.me, kv.currentConfig.Num, kv.currentConfig.Shards)
-				DPrintf("[%d %d] NEW CONFIG %d %v", kv.gid, kv.me, newConfig.Num, newConfig.Shards)
-				kv.rf.Start(newConfig)
+			if canPullLatestConfig {
+				nextConfig := kv.currentConfig.Num + 1
+				newConfig := kv.mck.Query(nextConfig)
+				
+				if newConfig.Num == nextConfig {
+						DPrintf("[%d %d] CURRENT CONFIG %d %v", kv.gid, kv.me, kv.currentConfig.Num, kv.currentConfig.Shards)
+						DPrintf("[%d %d] NEW CONFIG %d %v", kv.gid, kv.me, newConfig.Num, newConfig.Shards)
+						kv.rf.Start(newConfig)
+				}
+			}
+			kv.mu.Unlock()
 		}
-		kv.mu.Unlock()
 
 		time.Sleep(50 * time.Millisecond)
 	}
@@ -396,9 +422,9 @@ func (kv *ShardKV) pollConfigChanges() {
 
 func (kv *ShardKV) handleConfigChange(newConfig shardctrler.Config) {
 	kv.mu.Lock()
+	defer kv.mu.Unlock()
 
 	if newConfig.Num <= kv.currentConfig.Num {
-		kv.mu.Unlock()
 		return
 	}
 
@@ -428,7 +454,38 @@ func (kv *ShardKV) handleConfigChange(newConfig shardctrler.Config) {
 	kv.lastConfig = kv.currentConfig
 	kv.currentConfig = newConfig
 
-	kv.mu.Unlock()
+}
+
+
+
+
+func (kv *ShardKV) handleMigration(reply *MigrateReply) {
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+
+	if reply.ConfigNum != kv.currentConfig.Num-1 {
+		return
+	}
+
+	DPrintf("[%d %d] UPDATING KV CONFIG [%d]", kv.gid, kv.me, reply.ConfigNum)
+
+	for shard, kvData := range reply.Data {
+		for k, v := range kvData {
+			if _, ok := kv.kvStore[shard]; !ok {
+				kv.kvStore[shard] = make(map[string]string)
+			}
+			kv.kvStore[shard][k] = v
+		}
+		kv.serveShards[shard] = "serve"
+	}
+
+	for k, v := range reply.Dup {
+		if _, ok := kv.dupTable[k]; !ok || kv.dupTable[k] < v {
+			kv.dupTable[k] = v
+		}
+	}
+	
+	DPrintf("[%d %d] UPDATED SERVE SHARDS %v", kv.gid, kv.me, kv.serveShards)
 }
 
 
@@ -467,7 +524,7 @@ func (kv *ShardKV) pullData() {
 			wg.Wait()
 		}
 
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond)
 	}
 	
 }
@@ -498,6 +555,7 @@ func (kv *ShardKV) Migrate(args *MigrateArgs, reply *MigrateReply) {
 	defer kv.mu.Unlock()
 
 	if args.ConfigNum >= kv.currentConfig.Num {
+
 		reply.Err = ErrWrongGroup
 		return
 	}
@@ -522,36 +580,6 @@ func (kv *ShardKV) Migrate(args *MigrateArgs, reply *MigrateReply) {
 	reply.Err = OK
 }
 
-
-
-func (kv *ShardKV) handleMigration(reply *MigrateReply) {
-	kv.mu.Lock()
-	defer kv.mu.Unlock()
-
-	if reply.ConfigNum != kv.currentConfig.Num-1 {
-		return
-	}
-
-	DPrintf("[%d %d] UPDATING KV CONFIG [%d]", kv.gid, kv.me, reply.ConfigNum)
-
-	for shard, kvData := range reply.Data {
-		for k, v := range kvData {
-			if _, ok := kv.kvStore[shard]; !ok {
-				kv.kvStore[shard] = make(map[string]string)
-			}
-			kv.kvStore[shard][k] = v
-		}
-		kv.serveShards[shard] = "serve"
-	}
-
-	for k, v := range reply.Dup {
-		if _, ok := kv.dupTable[k]; !ok || kv.dupTable[k] < v {
-			kv.dupTable[k] = v
-		}
-	}
-	
-	DPrintf("[%d %d] UPDATED SERVE SHARDS %v", kv.gid, kv.me, kv.serveShards)
-}
 
 
 // servers[] contains the ports of the servers in this group.
@@ -609,7 +637,7 @@ func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister,
 	kv.serveShards = make(map[int]string)
 	kv.lastApplied = 0
 	kv.currentConfig = kv.mck.Query(0)
-	kv.lastConfig = kv.currentConfig
+	kv.lastConfig = kv.mck.Query(0)
 
 	kv.restoreState(persister.ReadSnapshot())
 
