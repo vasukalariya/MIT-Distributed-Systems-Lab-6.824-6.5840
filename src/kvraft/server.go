@@ -329,7 +329,6 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 
 	// You may need initialization code here.
 	kv.kvStore = make(map[string]string)
-	// kv.opCh = make(map[int]chan Op)
 	kv.responseCh = make(map[int]chan Op)
 	kv.dupTable = make(map[int64]Op)
 	kv.lastApplied = 0

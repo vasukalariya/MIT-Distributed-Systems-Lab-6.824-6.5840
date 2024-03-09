@@ -38,7 +38,7 @@ type ShardCtrler struct {
 	configs []Config // indexed by config num
 }
 
-func (kv *ShardCtrler) sameOps(a Op, b Op) bool {
+func (sc *ShardCtrler) sameOps(a Op, b Op) bool {
 	return a.ClientId == b.ClientId &&
 		a.RequestId == b.RequestId &&
 		a.Opr == b.Opr
