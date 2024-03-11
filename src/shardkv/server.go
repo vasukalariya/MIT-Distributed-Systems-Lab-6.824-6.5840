@@ -12,7 +12,7 @@ import (
 	"6.5840/shardctrler"
 )
 
-const Debug = false
+const Debug = true
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug {
@@ -20,7 +20,6 @@ func DPrintf(format string, a ...interface{}) (n int, err error) {
 	}
 	return
 }
-
 
 type Op struct {
 	// Your definitions here.
@@ -32,7 +31,6 @@ type Op struct {
 	ClientId  int64
 	RequestId int
 }
-
 
 type ShardKV struct {
 	mu           sync.Mutex
@@ -47,11 +45,11 @@ type ShardKV struct {
 	// Your definitions here.
 	currentConfig shardctrler.Config
 	lastConfig    shardctrler.Config
-	
-	kvStore    map[int]map[string]string // shard -> key-value
-	dupTable   map[int64]int // clientId -> requestId
-	
-	responseCh map[int]chan Op 
+
+	kvStore  map[int]map[string]string // shard -> key-value
+	dupTable map[int64]int             // clientId -> requestId
+
+	responseCh  map[int]chan Op
 	lastApplied int
 
 	serveShards map[int]string // shard -> status
@@ -59,14 +57,11 @@ type ShardKV struct {
 	mck *shardctrler.Clerk
 }
 
-
-
 func (kv *ShardKV) sameOps(a Op, b Op) bool {
 	return a.ClientId == b.ClientId &&
 		a.RequestId == b.RequestId &&
 		a.Opr == b.Opr
 }
-
 
 func (kv *ShardKV) checkDup(clientId int64, requestId int) bool {
 	reqId, ok := kv.dupTable[clientId]
@@ -87,7 +82,6 @@ func (kv *ShardKV) checkChannel(index int) chan Op {
 	return kv.responseCh[index]
 }
 
-
 func (kv *ShardKV) handleKey(key string) bool {
 	shard := key2shard(key)
 	if val, ok := kv.serveShards[shard]; !ok || val != "serve" {
@@ -96,10 +90,6 @@ func (kv *ShardKV) handleKey(key string) bool {
 	}
 	return true
 }
-
-
-
-
 
 func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 	// Your code here.
@@ -155,11 +145,6 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 
 }
 
-
-
-
-
-
 func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	// Your code here.
 	kv.mu.Lock()
@@ -176,7 +161,6 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 		return
 	}
 	kv.mu.Unlock()
-
 
 	command := Op{
 		Key:       args.Key,
@@ -219,7 +203,6 @@ func (kv *ShardKV) Kill() {
 	// Your code here, if desired.
 }
 
-
 func (kv *ShardKV) callSnapshot() {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
@@ -252,12 +235,9 @@ func (kv *ShardKV) callSnapshot() {
 		kv_state := w.Bytes()
 
 		kv.rf.Snapshot(kv.lastApplied, kv_state)
-		DPrintf("[%d] SNAPSHOT client [] requestid [] index [%d]", kv.me, kv.lastApplied)
+		DPrintf("[%d %d] SNAPSHOT client [] requestid [] index [%d]", kv.gid, kv.me, kv.lastApplied)
 	}
 }
-
-
-
 
 func (kv *ShardKV) restoreState(snapshot []byte) {
 	kv.mu.Lock()
@@ -275,22 +255,19 @@ func (kv *ShardKV) restoreState(snapshot []byte) {
 	var tmpServeShards map[int]string
 
 	if d.Decode(&tmpKvStore) != nil ||
-		d.Decode(&tmpDupTable) != nil || 
+		d.Decode(&tmpDupTable) != nil ||
 		d.Decode(&tmpCurrentConfig) != nil ||
 		d.Decode(&tmpServeShards) != nil {
-	   DPrintf("[%d %d] Error in restoring state!", kv.gid, kv.me)
+		DPrintf("[%d %d] Error in restoring state!", kv.gid, kv.me)
 	} else {
 		kv.kvStore = tmpKvStore
 		kv.dupTable = tmpDupTable
 		kv.currentConfig = tmpCurrentConfig
 		kv.serveShards = tmpServeShards
-		kv.lastConfig = kv.mck.Query(kv.currentConfig.Num-1)
+		kv.lastConfig = kv.mck.Query(kv.currentConfig.Num - 1)
 	}
 
 }
-
-
-
 
 func (kv *ShardKV) receiveUpdates() {
 
@@ -299,7 +276,7 @@ func (kv *ShardKV) receiveUpdates() {
 		if response.CommandValid {
 			index := response.CommandIndex
 			kv.mu.Lock()
-			
+
 			if index <= kv.lastApplied {
 				kv.mu.Unlock()
 				continue
@@ -308,13 +285,13 @@ func (kv *ShardKV) receiveUpdates() {
 			kv.mu.Unlock()
 
 			if cfg, ok := response.Command.(shardctrler.Config); ok {
-				
+
 				DPrintf("[%d %d] RECEIVED CONFIG %d %v", kv.gid, kv.me, cfg.Num, cfg.Shards)
 				kv.handleConfigChange(cfg)
 
 			} else if reply, ok := response.Command.(MigrateReply); ok {
-				
-				DPrintf("[%d %d] MIGRATION RECEIVED %v", kv.gid, kv.me, reply.ConfigNum)
+
+				DPrintf("[%d %d] MIGRATION RECEIVED %v for CONFIG %v", kv.gid, kv.me, reply.Data, reply.ConfigNum)
 				kv.handleMigration(&reply)
 				DPrintf("[%d %d] MIGRATION COMPLETE %v %v", kv.gid, kv.me, reply.ConfigNum, kv.serveShards)
 
@@ -328,10 +305,10 @@ func (kv *ShardKV) receiveUpdates() {
 				requestId := cmd.RequestId
 				shard := key2shard(k)
 
-				// DPrintf("[%d] RESPONSE client [%d] requestid [%d] index [%d]", kv.me, clientId, requestId, index)
+				DPrintf("[%d %d] RESPONSE client [%d] requestid [%d] index [%d] opr [%v] k [%v] v [%v]", kv.gid, kv.me, clientId, requestId, index, op, k, v)
 				kv.mu.Lock()
-				
-				if !kv.handleKey(k){
+
+				if !kv.handleKey(k) {
 					kv.mu.Unlock()
 					continue
 				}
@@ -351,18 +328,16 @@ func (kv *ShardKV) receiveUpdates() {
 				} else {
 					if op == "Get" {
 						cmd.Value = kv.kvStore[shard][k]
-						kv.dupTable[clientId] = requestId
 					} else if op == "Append" {
 						kv.kvStore[shard][k] += v
 						cmd.Value = kv.kvStore[shard][k]
-						kv.dupTable[clientId] = requestId
 					} else if op == "Put" {
 						kv.kvStore[shard][k] = v
 						cmd.Value = kv.kvStore[shard][k]
-						kv.dupTable[clientId] = requestId
 					}
+					kv.dupTable[clientId] = requestId
 				}
-				// DPrintf("[%d] APPLIED client [%d] requestid [%d] index [%d]", kv.me, clientId, requestId, index)
+				DPrintf("[%d %d] APPLIED client [%d] requestid [%d] index [%d] opr [%v] k [%v] v [%v]", kv.gid, kv.me, clientId, requestId, index, op, k, v)
 				kv.mu.Unlock()
 				ch <- cmd
 			}
@@ -378,19 +353,14 @@ func (kv *ShardKV) receiveUpdates() {
 
 }
 
-
-
-
-
-
 func (kv *ShardKV) pollConfigChanges() {
 	for {
 		_, isLeader := kv.rf.GetState()
-		
+
 		if isLeader {
 			kv.mu.Lock()
 			canPullLatestConfig := true
-			
+
 			for _, status := range kv.serveShards {
 				if status != "serve" {
 					canPullLatestConfig = false
@@ -401,11 +371,11 @@ func (kv *ShardKV) pollConfigChanges() {
 			if canPullLatestConfig {
 				nextConfig := kv.currentConfig.Num + 1
 				newConfig := kv.mck.Query(nextConfig)
-				
+
 				if newConfig.Num == nextConfig {
-						DPrintf("[%d %d] CURRENT CONFIG %d %v", kv.gid, kv.me, kv.currentConfig.Num, kv.currentConfig.Shards)
-						DPrintf("[%d %d] NEW CONFIG %d %v", kv.gid, kv.me, newConfig.Num, newConfig.Shards)
-						kv.rf.Start(newConfig)
+					DPrintf("[%d %d] CURRENT CONFIG %d %v", kv.gid, kv.me, kv.currentConfig.Num, kv.currentConfig.Shards)
+					DPrintf("[%d %d] NEW CONFIG %d %v", kv.gid, kv.me, newConfig.Num, newConfig.Shards)
+					kv.rf.Start(newConfig)
 				}
 			}
 			kv.mu.Unlock()
@@ -414,11 +384,6 @@ func (kv *ShardKV) pollConfigChanges() {
 		time.Sleep(50 * time.Millisecond)
 	}
 }
-
-
-
-
-
 
 func (kv *ShardKV) handleConfigChange(newConfig shardctrler.Config) {
 	kv.mu.Lock()
@@ -431,7 +396,7 @@ func (kv *ShardKV) handleConfigChange(newConfig shardctrler.Config) {
 	DPrintf("[%d %d] HANDLE CONFIG CHANGE %d %v", kv.gid, kv.me, newConfig.Num, newConfig.Shards)
 
 	kv.serveShards = make(map[int]string)
-	
+
 	for shard, gid := range newConfig.Shards {
 		if gid == kv.gid {
 			if newConfig.Num == 1 {
@@ -441,7 +406,7 @@ func (kv *ShardKV) handleConfigChange(newConfig shardctrler.Config) {
 			}
 		}
 	}
-	
+
 	for shard, gid := range kv.currentConfig.Shards {
 		_, present := kv.serveShards[shard]
 		if gid == kv.gid && present {
@@ -456,9 +421,6 @@ func (kv *ShardKV) handleConfigChange(newConfig shardctrler.Config) {
 
 }
 
-
-
-
 func (kv *ShardKV) handleMigration(reply *MigrateReply) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
@@ -470,6 +432,9 @@ func (kv *ShardKV) handleMigration(reply *MigrateReply) {
 	DPrintf("[%d %d] UPDATING KV CONFIG [%d]", kv.gid, kv.me, reply.ConfigNum)
 
 	for shard, kvData := range reply.Data {
+		if kv.serveShards[shard] == "serve" {
+			continue
+		}
 		for k, v := range kvData {
 			if _, ok := kv.kvStore[shard]; !ok {
 				kv.kvStore[shard] = make(map[string]string)
@@ -484,12 +449,9 @@ func (kv *ShardKV) handleMigration(reply *MigrateReply) {
 			kv.dupTable[k] = v
 		}
 	}
-	
+
 	DPrintf("[%d %d] UPDATED SERVE SHARDS %v", kv.gid, kv.me, kv.serveShards)
 }
-
-
-
 
 func (kv *ShardKV) pullData() {
 
@@ -513,8 +475,8 @@ func (kv *ShardKV) pullData() {
 			var wg sync.WaitGroup
 			for gid, shards := range requestData {
 				args := MigrateArgs{
-					Shards: shards,
-					ConfigNum: kv.currentConfig.Num-1,
+					Shards:    shards,
+					ConfigNum: kv.currentConfig.Num - 1,
 				}
 				wg.Add(1)
 				go kv.sendMigrateRPC(&wg, &args, kv.lastConfig.Groups[gid])
@@ -526,10 +488,8 @@ func (kv *ShardKV) pullData() {
 
 		time.Sleep(20 * time.Millisecond)
 	}
-	
+
 }
-
-
 
 func (kv *ShardKV) sendMigrateRPC(wg *sync.WaitGroup, args *MigrateArgs, servers []string) {
 	defer wg.Done()
@@ -539,10 +499,10 @@ func (kv *ShardKV) sendMigrateRPC(wg *sync.WaitGroup, args *MigrateArgs, servers
 		ok := srv.Call("ShardKV.Migrate", args, &reply)
 		if ok && reply.Err == OK {
 			kv.rf.Start(reply)
+			return
 		}
 	}
 }
-
 
 func (kv *ShardKV) Migrate(args *MigrateArgs, reply *MigrateReply) {
 	_, isLeader := kv.rf.GetState()
@@ -579,8 +539,6 @@ func (kv *ShardKV) Migrate(args *MigrateArgs, reply *MigrateReply) {
 
 	reply.Err = OK
 }
-
-
 
 // servers[] contains the ports of the servers in this group.
 //
