@@ -1,6 +1,6 @@
 # Description
 
-This project is for MIT CS 6.5840 Spring 2023 labs. MIT CS 6.824 has the same assignments.
+This project is for [MIT CS 6.5840 Spring 2023](http://nil.csail.mit.edu/6.5840/2023/) labs. MIT CS 6.824 has the same assignments.
 
 Learned the concepts through [MIT CS 6.824 Spring 2020](https://www.youtube.com/playlist?list=PLrw6a1wE39_tb2fErI4-WkMbsvGQk9_UB) lectures on YouTube.
 
