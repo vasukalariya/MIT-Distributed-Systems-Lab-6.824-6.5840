@@ -1,7 +1,11 @@
 # Description
 
-This project is for MIT CS 6.5840 Spring 2023 labs. But, the same applies for MIT 6.824 labs.
-Learned the concepts through MIT CS 6.824 Spring 2020 lectures on YouTube.
+This project is for MIT CS 6.5840 Spring 2023 labs. MIT CS 6.824 has the same assignments.
+
+Learned the concepts through [MIT CS 6.824 Spring 2020](https://www.youtube.com/playlist?list=PLrw6a1wE39_tb2fErI4-WkMbsvGQk9_UB) lectures on YouTube.
+
+Heartiest thank you to MIT and Prof. Robert Morris for providing this course for free along with the assignments. It was really a great learning experience.
+
 
 - [x] Lab 1: Map Reduce
 
@@ -70,6 +74,19 @@ Takeaways:
  - Map iteration is not deterministic, while re-balancing you need to use some order of keys to iterate. Hint: Sorting
  - Be sure to assign the currentConfig as the last config in the config list during start.
  - Make sure to check for out of bounds for num parameter of Query.
+
+
+- [x] Lab 4B: Sharded Key/value service
+
+Takeaways:
+ - Poll for config changes. Need to tweak the sleep time such that it is not too slow.
+ - Always pull config one by one. Do directly pull the latest config because you would need to replay the configuration changes and handle migration sequentially.
+ - Manage shard status like serving, waiting, etc. You should only handle requests from the client for which the keys are serving.
+ - You can use push or pull mechanism to fetch data for shards from other servers. I have used pull mechanism, I find it more intuitive and better to implement.
+ - Remember to pass config num while making request for data migration and use it to validate if the requested config num is less than the current config num.
+ - Only leader should pull the data and upon successful migration, it can replicate it among the quorum.
+ - Send dup table along with data to avoid duplicate requests.
+ - Shards and dup table should only be updated once for a data migration request. Be sure to only update the values of a shard if it is not serving cause it can undo requests.
 
 
 
